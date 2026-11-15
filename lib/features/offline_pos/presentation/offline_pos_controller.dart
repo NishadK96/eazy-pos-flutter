@@ -214,6 +214,8 @@ class OfflinePosController extends AsyncNotifier<OfflinePosState> {
     String? serviceStaffId,
     String? serviceTypeId,
     int grossDiscount = 0,
+    String paymentMethod = 'due',
+    String? cashRegisterId,
   }) async {
     final current = state.value ?? await future;
     final context = current.context;
@@ -254,6 +256,10 @@ class OfflinePosController extends AsyncNotifier<OfflinePosState> {
       0,
       lines.fold<int>(0, (sum, line) => sum + line.total) - grossDiscount,
     );
+    final normalizedPaymentMethod = paymentMethod.toLowerCase() == 'credit'
+        ? 'due'
+        : paymentMethod.toLowerCase();
+    final isPaid = normalizedPaymentMethod != 'due';
     final sale = Sale(
       localId: 'kitchen-$clientTransactionId',
       invoiceNo: provisional,
@@ -261,13 +267,13 @@ class OfflinePosController extends AsyncNotifier<OfflinePosState> {
       updatedAt: now,
       customer: customer,
       items: lines,
-      paymentMethod: 'due',
+      paymentMethod: normalizedPaymentMethod,
       total: total,
       tax: lines.fold<int>(0, (sum, line) => sum + line.tax),
       discount: grossDiscount,
       syncStatus: SyncStatus.pending,
       status: status,
-      paymentStatus: 'due',
+      paymentStatus: isPaid ? 'paid' : 'due',
       locationId: locationId,
       tableId: tableId ?? '',
       waiterId: serviceStaffId ?? '',
@@ -282,6 +288,8 @@ class OfflinePosController extends AsyncNotifier<OfflinePosState> {
       'transaction_date': now.toIso8601String(),
       'status': status,
       'is_kitchen_order': 1,
+      if (cashRegisterId?.isNotEmpty == true)
+        'cash_register_id': int.parse(cashRegisterId!),
       if (status == 'draft') 'is_suspend': 1,
       if (tableId?.isNotEmpty == true) 'table_id': int.parse(tableId!),
       if (serviceStaffId?.isNotEmpty == true)
@@ -315,6 +323,10 @@ class OfflinePosController extends AsyncNotifier<OfflinePosState> {
               ],
           },
       ],
+      if (isPaid)
+        'payments': [
+          {'amount': total / 100, 'method': normalizedPaymentMethod},
+        ],
     };
     final record = OfflineSaleRecord(
       localSaleId: sale.localId,

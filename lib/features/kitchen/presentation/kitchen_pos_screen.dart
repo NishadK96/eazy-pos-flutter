@@ -215,11 +215,19 @@ class _KitchenPosScreenState extends ConsumerState<KitchenPosScreen> {
       error is TimeoutException ||
       error is http.ClientException ||
       (error is ApiException &&
-          (error.statusCode == 408 ||
+          ((error.statusCode == null &&
+                  (error.message.contains('could not be reached') ||
+                      error.message.contains('did not respond'))) ||
+              error.statusCode == 408 ||
               error.statusCode == 429 ||
               (error.statusCode ?? 0) >= 500));
 
-  Future<void> _queueOfflineOrder(String status) async {
+  Future<Sale> _queueOfflineOrder(
+    String status, {
+    String paymentMethod = 'due',
+    String? cashRegisterId,
+    bool resetOrder = true,
+  }) async {
     final store = ref.read(appStoreProvider);
     final locationId = _locationId(store);
     final customer = _customer(store);
@@ -243,12 +251,19 @@ class _KitchenPosScreenState extends ConsumerState<KitchenPosScreen> {
           serviceStaffId: _waiterId,
           serviceTypeId: _serviceTypeId,
           grossDiscount: _grossDiscount,
+          paymentMethod: paymentMethod,
+          cashRegisterId: cashRegisterId,
         );
-    if (!mounted) return;
-    _resetOrder();
+    if (!mounted) return sale;
+    if (resetOrder) _resetOrder();
     _show(
-      '${status == 'draft' ? 'Draft' : 'Kitchen order'} ${sale.invoiceNo} saved on this device. Sync before it appears in the kitchen; no ticket has printed yet.',
+      '${status == 'draft'
+          ? 'Draft'
+          : paymentMethod == 'due'
+          ? 'Kitchen order'
+          : 'Paid order'} ${sale.invoiceNo} saved on this device. Sync before it appears in the kitchen; no ticket has printed yet.',
     );
+    return sale;
   }
 
   @override
@@ -660,6 +675,19 @@ class _KitchenPosScreenState extends ConsumerState<KitchenPosScreen> {
     if (method == null || !mounted) return;
     setState(() => _sending = true);
     try {
+      if (_offlineSession && _savedTransactionId == null) {
+        final sale = await _queueOfflineOrder(
+          'final',
+          paymentMethod: method.code,
+          cashRegisterId: register.id,
+          resetOrder: false,
+        );
+        if (!mounted) return;
+        if (printCustomerBill) await _printSavedOrderBill(sale);
+        if (!mounted) return;
+        _resetOrder();
+        return;
+      }
       var transactionId = _savedTransactionId;
       final creatingSale = transactionId == null;
       if (transactionId == null) {
@@ -735,6 +763,25 @@ class _KitchenPosScreenState extends ConsumerState<KitchenPosScreen> {
         _show(
           'This account cannot create a sale. Ask an administrator to enable Sell Create or Direct Sell Access.',
         );
+      } else if (_savedTransactionId == null &&
+          _isConnectionFailure(error) &&
+          ref.read(offlinePosControllerProvider).value?.ready == true) {
+        try {
+          final sale = await _queueOfflineOrder(
+            'final',
+            paymentMethod: method.code,
+            cashRegisterId: register.id,
+            resetOrder: false,
+          );
+          if (!mounted) return;
+          if (printCustomerBill) await _printSavedOrderBill(sale);
+          if (!mounted) return;
+          _resetOrder();
+        } catch (queueError) {
+          if (mounted) {
+            _show('Unable to save this paid order offline: $queueError');
+          }
+        }
       } else {
         _show('Billing needs attention: ${error.message}');
       }

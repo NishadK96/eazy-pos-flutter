@@ -261,4 +261,45 @@ void main() {
       expect(restored.status, 'final');
     },
   );
+
+  test(
+    'paid kitchen order preserves payment for offline synchronization',
+    () async {
+      final container = _container(_OfflineApi());
+      addTearDown(container.dispose);
+      await container.read(offlinePosControllerProvider.future);
+      await container
+          .read(offlinePosControllerProvider.notifier)
+          .prepare(locationId: '1', cashRegisterId: '12');
+      final app = container.read(appStoreProvider);
+
+      final sale = await container
+          .read(offlinePosControllerProvider.notifier)
+          .queueKitchenOrder(
+            locationId: '1',
+            customer: app.customers.first,
+            lines: [CartLine(product: app.products.first)],
+            clientTransactionId: 'paid-kitchen-order-1',
+            saleNote: 'Takeaway · Pax 1',
+            status: 'final',
+            paymentMethod: 'cash',
+            cashRegisterId: '12',
+          );
+      final sell =
+          container
+                  .read(offlinePosControllerProvider)
+                  .requireValue
+                  .queue
+                  .single
+                  .payload['sell']
+              as Map;
+
+      expect(sale.paymentMethod, 'cash');
+      expect(sale.paymentStatus, 'paid');
+      expect(sell['cash_register_id'], 12);
+      expect(sell['payments'], [
+        {'amount': sale.total / 100, 'method': 'cash'},
+      ]);
+    },
+  );
 }
