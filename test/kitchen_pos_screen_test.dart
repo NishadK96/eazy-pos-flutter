@@ -3,6 +3,7 @@ import 'package:eazy_pos/core/localization/app_localizations.dart';
 import 'package:eazy_pos/features/kitchen/presentation/kitchen_pos_screen.dart';
 import 'package:eazy_pos/features/store/app_store.dart';
 import 'package:eazy_pos/shared/models/entities.dart';
+import 'package:eazy_pos/shared/widgets/localized_text.dart' as localized;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -174,18 +175,31 @@ void main() {
       expect(find.byKey(const ValueKey('kitchen-table-card')), findsNothing);
       await tester.tap(find.text('Dine in'));
       await tester.pumpAndSettle();
-      if (size.width >= 960) {
-        final serviceRect = tester.getRect(
-          find.widgetWithText(OutlinedButton, 'Dine in'),
-        );
+      expect(
+        tester
+            .widget<localized.Text>(
+              find.byKey(const ValueKey('kitchen-guest-count')),
+            )
+            .data,
+        '1',
+      );
+      await tester.tap(find.byTooltip('Add guest'));
+      await tester.pump();
+      expect(
+        tester
+            .widget<localized.Text>(
+              find.byKey(const ValueKey('kitchen-guest-count')),
+            )
+            .data,
+        '2',
+      );
+      if (size.width >= 1100) {
         final tableRect = tester.getRect(
           find.byKey(const ValueKey('kitchen-table-card')),
         );
-        expect((serviceRect.top - tableRect.top).abs(), lessThanOrEqualTo(2));
-        expect(
-          (serviceRect.height - tableRect.height).abs(),
-          lessThanOrEqualTo(2),
-        );
+        expect(tableRect.left, greaterThan(size.width * .7));
+        expect(tableRect.right, lessThanOrEqualTo(size.width));
+        expect(tableRect.height, greaterThanOrEqualTo(44));
         if (size.height < 720) {
           final keypadSeven = tester.getRect(
             find.byKey(const ValueKey('kitchen-keypad-7')),
@@ -204,15 +218,19 @@ void main() {
           find.byKey(const ValueKey('kitchen-category-panel')),
           findsOneWidget,
         );
-        expect(
-          find.byKey(const ValueKey('kitchen-add-quantity')),
-          findsOneWidget,
-        );
+        if (size.width < 600) {
+          expect(
+            find.byKey(const ValueKey('kitchen-add-quantity')),
+            findsOneWidget,
+          );
+        } else {
+          expect(find.text('x1'), findsOneWidget);
+        }
       }
 
       await tester.tap(find.byKey(const ValueKey('kitchen-product-1')));
       await tester.pumpAndSettle();
-      if (size.width < 960) {
+      if (size.width < 1100) {
         expect(find.text('View order (1)'), findsOneWidget);
         await tester.tap(
           find.byKey(const ValueKey('kitchen-mobile-order-toggle')),
