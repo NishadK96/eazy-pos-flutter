@@ -802,6 +802,17 @@ class PrinterDocumentService {
     final header = _map(manifest['header']);
     final footer = _map(manifest['footer']);
     final provisional = _map(manifest['provisional_document']);
+    final rendererProfile = '${manifest['renderer_profile'] ?? ''}';
+    final premium = rendererProfile.startsWith('premium_');
+    final premiumMinimal = rendererProfile == 'premium_minimal';
+    final premiumCompact = rendererProfile == 'premium_compact';
+    final accent = switch (rendererProfile) {
+      'premium_executive' => const PdfColor(.10, .16, .22),
+      'premium_emerald' => const PdfColor(.02, .43, .34),
+      'premium_minimal' => const PdfColor(.25, .29, .32),
+      'premium_compact' => const PdfColor(.10, .36, .43),
+      _ => PdfColors.grey700,
+    };
     final width = _number(page['width_mm'], 80) * PdfPageFormat.mm;
     final height = _number(page['height_mm'], 297) * PdfPageFormat.mm;
     final margins = _map(page['margins_mm']);
@@ -876,6 +887,15 @@ class PrinterDocumentService {
           _number(margins['bottom'], 2) * PdfPageFormat.mm,
         ),
         build: (_) => [
+          if (premium && !premiumMinimal)
+            pw.Container(
+              height: premiumCompact ? 4 : 7,
+              margin: const pw.EdgeInsets.only(bottom: 8),
+              decoration: pw.BoxDecoration(
+                color: accent,
+                borderRadius: pw.BorderRadius.circular(3),
+              ),
+            ),
           if (logo != null && visible['logo'] == true)
             pw.Center(
               child: pw.Image(
@@ -937,13 +957,39 @@ class PrinterDocumentService {
               header['text'].toString(),
               textAlign: pw.TextAlign.center,
             ),
-          pw.SizedBox(height: 8),
-          PdfFonts.bilingual(
-            label('invoice_heading', 'PROVISIONAL INVOICE'),
-            textAlign: pw.TextAlign.center,
-            crossAxisAlignment: pw.CrossAxisAlignment.center,
-            style: pw.TextStyle(fontSize: 14, fontWeight: pw.FontWeight.bold),
-          ),
+          pw.SizedBox(height: premiumCompact ? 5 : 8),
+          if (premium)
+            pw.Container(
+              width: double.infinity,
+              padding: pw.EdgeInsets.symmetric(
+                horizontal: 8,
+                vertical: premiumCompact ? 5 : 7,
+              ),
+              decoration: pw.BoxDecoration(
+                color: premiumMinimal ? PdfColors.grey100 : accent,
+                border: premiumMinimal
+                    ? pw.Border.all(color: accent, width: .7)
+                    : null,
+                borderRadius: pw.BorderRadius.circular(4),
+              ),
+              child: PdfFonts.bilingual(
+                label('invoice_heading', 'PROVISIONAL INVOICE'),
+                textAlign: pw.TextAlign.center,
+                crossAxisAlignment: pw.CrossAxisAlignment.center,
+                style: pw.TextStyle(
+                  color: premiumMinimal ? accent : PdfColors.white,
+                  fontSize: premiumCompact ? 11 : 13,
+                  fontWeight: pw.FontWeight.bold,
+                ),
+              ),
+            )
+          else
+            PdfFonts.bilingual(
+              label('invoice_heading', 'PROVISIONAL INVOICE'),
+              textAlign: pw.TextAlign.center,
+              crossAxisAlignment: pw.CrossAxisAlignment.center,
+              style: pw.TextStyle(fontSize: 14, fontWeight: pw.FontWeight.bold),
+            ),
           pw.Divider(),
           _documentFact(label('invoice_number', 'Invoice'), sale.invoiceNo),
           _documentFact(
@@ -969,16 +1015,30 @@ class PrinterDocumentService {
               2: pw.FlexColumnWidth(1.8),
               3: pw.FlexColumnWidth(1.8),
             },
-            border: pw.TableBorder.all(width: .4),
+            border: pw.TableBorder.all(
+              width: premium ? .55 : .4,
+              color: premium ? accent : PdfColors.black,
+            ),
             children: [
               pw.TableRow(
-                decoration: const pw.BoxDecoration(color: PdfColors.grey200),
-                children: [
-                  label('product', 'Product'),
-                  label('quantity', 'Qty'),
-                  label('unit_price', 'Unit price'),
-                  label('line_subtotal', 'Total'),
-                ].map((value) => _offlineTableCell(value, bold: true)).toList(),
+                decoration: pw.BoxDecoration(
+                  color: premium ? accent : PdfColors.grey200,
+                ),
+                children:
+                    [
+                          label('product', 'Product'),
+                          label('quantity', 'Qty'),
+                          label('unit_price', 'Unit price'),
+                          label('line_subtotal', 'Total'),
+                        ]
+                        .map(
+                          (value) => _offlineTableCell(
+                            value,
+                            bold: true,
+                            color: premium ? PdfColors.white : null,
+                          ),
+                        )
+                        .toList(),
               ),
               for (final item in sale.items)
                 pw.TableRow(
@@ -999,7 +1059,26 @@ class PrinterDocumentService {
           if (sale.discount != 0)
             _line(label('discount', 'Discount'), amount(sale.discount)),
           if (sale.tax != 0) _line(label('tax', 'Tax'), amount(sale.tax)),
-          _line(label('total', 'Total'), amount(sale.total), bold: true),
+          if (premium)
+            pw.Container(
+              margin: const pw.EdgeInsets.only(top: 5),
+              padding: const pw.EdgeInsets.symmetric(
+                horizontal: 7,
+                vertical: 6,
+              ),
+              decoration: pw.BoxDecoration(
+                color: premiumMinimal ? PdfColors.grey100 : accent,
+                borderRadius: pw.BorderRadius.circular(4),
+              ),
+              child: _line(
+                label('total', 'Total'),
+                amount(sale.total),
+                bold: true,
+                color: premiumMinimal ? accent : PdfColors.white,
+              ),
+            )
+          else
+            _line(label('total', 'Total'), amount(sale.total), bold: true),
           if (_map(manifest['payments'])['visible'] == true)
             _line(label('paid', 'Paid'), amount(sale.total)),
           pw.SizedBox(height: 12),
@@ -1073,42 +1152,54 @@ class PrinterDocumentService {
         : '$text / $translated';
   }
 
-  static pw.Widget _offlineTableCell(String value, {bool bold = false}) =>
-      pw.Padding(
-        padding: const pw.EdgeInsets.all(3),
-        child: PdfFonts.bilingual(
-          value,
-          style: pw.TextStyle(
-            fontSize: 8,
-            fontWeight: bold ? pw.FontWeight.bold : pw.FontWeight.normal,
-          ),
-        ),
-      );
+  static pw.Widget _offlineTableCell(
+    String value, {
+    bool bold = false,
+    PdfColor? color,
+  }) => pw.Padding(
+    padding: const pw.EdgeInsets.all(3),
+    child: PdfFonts.bilingual(
+      value,
+      style: pw.TextStyle(
+        color: color,
+        fontSize: 8,
+        fontWeight: bold ? pw.FontWeight.bold : pw.FontWeight.normal,
+      ),
+    ),
+  );
 
   static double _number(dynamic value, double fallback) =>
       value is num ? value.toDouble() : double.tryParse('$value') ?? fallback;
 
-  static pw.Widget _line(String label, String value, {bool bold = false}) =>
-      pw.Padding(
-        padding: const pw.EdgeInsets.symmetric(vertical: 2),
-        child: pw.Row(
-          children: [
-            pw.Expanded(
-              child: PdfFonts.bilingual(
-                label,
-                style: bold
-                    ? pw.TextStyle(fontWeight: pw.FontWeight.bold)
-                    : null,
-              ),
+  static pw.Widget _line(
+    String label,
+    String value, {
+    bool bold = false,
+    PdfColor? color,
+  }) => pw.Padding(
+    padding: const pw.EdgeInsets.symmetric(vertical: 2),
+    child: pw.Row(
+      children: [
+        pw.Expanded(
+          child: PdfFonts.bilingual(
+            label,
+            style: pw.TextStyle(
+              color: color,
+              fontWeight: bold ? pw.FontWeight.bold : pw.FontWeight.normal,
             ),
-            pw.SizedBox(width: 8),
-            PdfFonts.text(
-              value,
-              style: bold ? pw.TextStyle(fontWeight: pw.FontWeight.bold) : null,
-            ),
-          ],
+          ),
         ),
-      );
+        pw.SizedBox(width: 8),
+        PdfFonts.text(
+          value,
+          style: pw.TextStyle(
+            color: color,
+            fontWeight: bold ? pw.FontWeight.bold : pw.FontWeight.normal,
+          ),
+        ),
+      ],
+    ),
+  );
 
   static pw.Widget _receiptItem(CartLine item, bool arabic) => pw.Padding(
     padding: const pw.EdgeInsets.symmetric(vertical: 2),

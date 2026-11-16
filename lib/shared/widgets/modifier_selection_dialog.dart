@@ -149,86 +149,172 @@ class _ModifierSelectionDialogState extends State<_ModifierSelectionDialog> {
   }
 
   @override
-  Widget build(BuildContext context) => Focus(
-    autofocus: true,
-    onKeyEvent: (_, event) => _onKeyEvent(event),
-    child: AlertDialog(
-      titlePadding: const EdgeInsets.fromLTRB(24, 22, 16, 8),
-      contentPadding: const EdgeInsets.fromLTRB(24, 8, 24, 8),
-      title: Row(
-        children: [
-          const Icon(Icons.tune_rounded, color: AppColors.primary),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  widget.product.name,
-                  style: const TextStyle(fontWeight: FontWeight.w800),
-                ),
-                const Text(
-                  'Choose modifiers',
-                  style: TextStyle(
-                    color: AppColors.muted,
-                    fontSize: 13,
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-              ],
-            ),
+  Widget build(BuildContext context) {
+    final screen = MediaQuery.sizeOf(context);
+    final compact = screen.width < 680;
+    return Focus(
+      autofocus: true,
+      onKeyEvent: (_, event) => _onKeyEvent(event),
+      child: Dialog(
+        insetPadding: EdgeInsets.symmetric(
+          horizontal: compact ? 12 : 32,
+          vertical: compact ? 16 : 28,
+        ),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
+        clipBehavior: Clip.antiAlias,
+        child: ConstrainedBox(
+          constraints: BoxConstraints(
+            maxWidth: 900,
+            maxHeight: screen.height * .86,
           ),
-          IconButton(
-            tooltip: 'Close',
-            onPressed: () => Navigator.of(context).pop(),
-            icon: const Icon(Icons.close_rounded),
-          ),
-        ],
-      ),
-      content: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 520, maxHeight: 560),
-        child: SingleChildScrollView(
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              for (final group in widget.groups) _groupCard(group),
-              const Padding(
-                padding: EdgeInsets.only(bottom: 4),
-                child: Text(
-                  'Use ↑ / ↓ to select. Space or Enter toggles an option and Enter confirms Add to order.',
-                  style: TextStyle(color: AppColors.muted, fontSize: 11),
+              _dialogHeader(compact),
+              Flexible(
+                child: SingleChildScrollView(
+                  padding: EdgeInsets.fromLTRB(
+                    compact ? 16 : 24,
+                    20,
+                    compact ? 16 : 24,
+                    8,
+                  ),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      for (final group in widget.groups) _groupCard(group),
+                    ],
+                  ),
+                ),
+              ),
+              _dialogFooter(compact),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _dialogHeader(bool compact) => Container(
+    padding: EdgeInsets.fromLTRB(
+      compact ? 16 : 24,
+      compact ? 16 : 20,
+      compact ? 8 : 14,
+      compact ? 16 : 20,
+    ),
+    decoration: BoxDecoration(
+      color: AppColors.primary.withValues(alpha: .07),
+      border: const Border(bottom: BorderSide(color: Color(0xFFDCE7E3))),
+    ),
+    child: Row(
+      children: [
+        Container(
+          width: compact ? 42 : 48,
+          height: compact ? 42 : 48,
+          decoration: BoxDecoration(
+            color: AppColors.primary.withValues(alpha: .12),
+            borderRadius: BorderRadius.circular(14),
+          ),
+          child: const Icon(Icons.tune_rounded, color: AppColors.primary),
+        ),
+        const SizedBox(width: 14),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                widget.product.name,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontSize: compact ? 20 : 24,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: -.3,
+                ),
+              ),
+              const SizedBox(height: 2),
+              const Text(
+                'Customize this item',
+                style: TextStyle(
+                  color: AppColors.muted,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w500,
                 ),
               ),
             ],
           ),
         ),
-      ),
-      actions: [
-        TextButton(
+        IconButton(
+          tooltip: 'Close',
           onPressed: () => Navigator.of(context).pop(),
-          child: const Text('Cancel'),
+          icon: const Icon(Icons.close_rounded),
         ),
-        Semantics(
-          selected: _focusedOption == _availableOptions.length,
-          child: FilledButton.icon(
-            onPressed: _valid ? _confirm : null,
-            style: FilledButton.styleFrom(
-              elevation: _focusedOption == _availableOptions.length ? 5 : 0,
-              shadowColor: AppColors.primary.withValues(alpha: .35),
-              side: BorderSide(
-                color: _focusedOption == _availableOptions.length
-                    ? const Color(0xFFF4B942)
-                    : Colors.transparent,
-                width: 3,
+      ],
+    ),
+  );
+
+  Widget _dialogFooter(bool compact) => Container(
+    padding: EdgeInsets.fromLTRB(
+      compact ? 16 : 24,
+      12,
+      compact ? 16 : 24,
+      compact ? 16 : 20,
+    ),
+    decoration: const BoxDecoration(
+      color: Color(0xFFFAFCFB),
+      border: Border(top: BorderSide(color: Color(0xFFDCE7E3))),
+    ),
+    child: Column(
+      children: [
+        if (!compact)
+          const Padding(
+            padding: EdgeInsets.only(bottom: 10),
+            child: Row(
+              children: [
+                Icon(
+                  Icons.keyboard_alt_outlined,
+                  size: 17,
+                  color: AppColors.muted,
+                ),
+                SizedBox(width: 7),
+                Expanded(
+                  child: Text(
+                    'Use ↑ / ↓ to move, then Space or Enter to select.',
+                    style: TextStyle(color: AppColors.muted, fontSize: 12),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.end,
+          children: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              style: TextButton.styleFrom(minimumSize: const Size(96, 48)),
+              child: const Text('Cancel'),
+            ),
+            const SizedBox(width: 10),
+            Semantics(
+              selected: _focusedOption == _availableOptions.length,
+              child: FilledButton.icon(
+                onPressed: _valid ? _confirm : null,
+                style: FilledButton.styleFrom(
+                  minimumSize: Size(compact ? 160 : 190, 48),
+                  elevation: _focusedOption == _availableOptions.length ? 4 : 0,
+                  shadowColor: AppColors.primary.withValues(alpha: .3),
+                  side: BorderSide(
+                    color: _focusedOption == _availableOptions.length
+                        ? const Color(0xFFF4B942)
+                        : Colors.transparent,
+                    width: 2,
+                  ),
+                ),
+                icon: const Icon(Icons.add_shopping_cart_rounded),
+                label: Text(widget.confirmLabel),
               ),
             ),
-            icon: Icon(
-              _focusedOption == _availableOptions.length
-                  ? Icons.keyboard_return_rounded
-                  : Icons.add_shopping_cart_rounded,
-            ),
-            label: Text(widget.confirmLabel),
-          ),
+          ],
         ),
       ],
     ),
@@ -266,23 +352,62 @@ class _ModifierSelectionDialogState extends State<_ModifierSelectionDialog> {
         border: Border.all(
           color: missing ? const Color(0xFFF0C9C9) : const Color(0xFFDCE5E2),
         ),
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(16),
       ),
       child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          ListTile(
-            dense: true,
-            title: Text(
-              group.name,
-              style: const TextStyle(fontWeight: FontWeight.w800),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(18, 16, 18, 14),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        group.name,
+                        style: const TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                      const SizedBox(height: 3),
+                      Text(
+                        instruction,
+                        style: const TextStyle(
+                          color: AppColors.muted,
+                          fontSize: 13,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                if (minimum > 0)
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 11,
+                      vertical: 6,
+                    ),
+                    decoration: BoxDecoration(
+                      color: missing
+                          ? const Color(0xFFFFEEEE)
+                          : AppColors.primary.withValues(alpha: .09),
+                      borderRadius: BorderRadius.circular(999),
+                    ),
+                    child: Text(
+                      missing ? 'Required' : '${selected.length} selected',
+                      style: TextStyle(
+                        color: missing
+                            ? const Color(0xFFB74343)
+                            : AppColors.primary,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+              ],
             ),
-            subtitle: Text(instruction),
-            trailing: minimum > 0
-                ? const Chip(
-                    label: Text('Required'),
-                    visualDensity: VisualDensity.compact,
-                  )
-                : null,
           ),
           const Divider(height: 1),
           if (available.isEmpty)
@@ -294,8 +419,29 @@ class _ModifierSelectionDialogState extends State<_ModifierSelectionDialog> {
               ),
             )
           else
-            for (final option in available)
-              _optionTile(group, option, selected),
+            Padding(
+              padding: const EdgeInsets.all(12),
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  const gap = 10.0;
+                  final columns = constraints.maxWidth >= 620 ? 2 : 1;
+                  final width = columns == 2
+                      ? (constraints.maxWidth - gap) / 2
+                      : constraints.maxWidth;
+                  return Wrap(
+                    spacing: gap,
+                    runSpacing: gap,
+                    children: [
+                      for (final option in available)
+                        SizedBox(
+                          width: width,
+                          child: _optionTile(group, option, selected),
+                        ),
+                    ],
+                  );
+                },
+              ),
+            ),
         ],
       ),
     );
@@ -312,35 +458,96 @@ class _ModifierSelectionDialogState extends State<_ModifierSelectionDialog> {
           entry.option.variationId == option.variationId,
     );
     final focused = optionIndex == _focusedOption;
-    return Container(
-      decoration: BoxDecoration(
-        color: focused ? AppColors.primary.withValues(alpha: .10) : null,
-        border: BorderDirectional(
-          start: BorderSide(
-            color: focused ? AppColors.primary : Colors.transparent,
-            width: 3,
-          ),
-        ),
-      ),
-      child: CheckboxListTile(
-        value: selected.contains(option.variationId),
-        onChanged: (value) {
+    final isSelected = selected.contains(option.variationId);
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(12),
+        onTap: () {
           setState(() => _focusedOption = optionIndex);
-          _toggle(group, option, value ?? false);
+          _toggle(group, option, !isSelected);
         },
-        controlAffinity: ListTileControlAffinity.leading,
-        dense: true,
-        title: Text(
-          option.name,
-          style: TextStyle(
-            fontWeight: focused ? FontWeight.w800 : FontWeight.w500,
-            color: focused ? AppColors.primary : null,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 140),
+          constraints: const BoxConstraints(minHeight: 76),
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+          decoration: BoxDecoration(
+            color: isSelected
+                ? AppColors.primary.withValues(alpha: .09)
+                : const Color(0xFFFAFCFB),
+            border: Border.all(
+              color: focused || isSelected
+                  ? AppColors.primary
+                  : const Color(0xFFDCE5E2),
+              width: focused ? 2 : 1,
+            ),
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Row(
+            children: [
+              SizedBox(
+                width: 24,
+                height: 24,
+                child: Checkbox(
+                  value: isSelected,
+                  onChanged: (value) {
+                    setState(() => _focusedOption = optionIndex);
+                    _toggle(group, option, value ?? false);
+                  },
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Text(
+                      option.name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 15,
+                        fontWeight: isSelected || focused
+                            ? FontWeight.w800
+                            : FontWeight.w600,
+                        color: isSelected || focused ? AppColors.primary : null,
+                      ),
+                    ),
+                    if (option.subSku.isNotEmpty) ...[
+                      const SizedBox(height: 3),
+                      Text(
+                        option.subSku,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: AppColors.muted,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              Text(
+                option.priceAdjustment == 0
+                    ? 'Included'
+                    : '+${money(option.priceAdjustment)}',
+                style: TextStyle(
+                  color: option.priceAdjustment == 0
+                      ? AppColors.muted
+                      : AppColors.primary,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ],
           ),
         ),
-        subtitle: option.subSku.isEmpty ? null : Text(option.subSku),
-        secondary: option.priceAdjustment == 0
-            ? const Text('Included')
-            : Text('+${money(option.priceAdjustment)}'),
       ),
     );
   }

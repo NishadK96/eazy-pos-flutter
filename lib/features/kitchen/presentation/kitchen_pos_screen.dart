@@ -6,6 +6,7 @@ import 'package:eazy_pos/shared/widgets/localized_text.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../../apis/api.dart';
 import '../../../core/network/api_provider.dart';
@@ -204,7 +205,9 @@ class _KitchenPosScreenState extends ConsumerState<KitchenPosScreen> {
   String _keypadInput = '';
   String _keypadMode = 'qty';
   bool _showMobileOrder = false;
+  bool _modernLayout = true;
   bool _sending = false;
+  double _classicOrderPanelWidth = 360;
   double _categoryPanelWidth = 148;
   String? _pendingClientTransactionId;
   String? _offlineDraftClientId;
@@ -212,6 +215,30 @@ class _KitchenPosScreenState extends ConsumerState<KitchenPosScreen> {
   Sale? _activeOrder;
 
   bool get _orderLocked => _pendingClientTransactionId != null;
+
+  bool _useModernDesktop(BuildContext context) =>
+      _modernLayout && MediaQuery.sizeOf(context).width >= 1100;
+
+  @override
+  void initState() {
+    super.initState();
+    unawaited(_loadLayoutPreference());
+  }
+
+  Future<void> _loadLayoutPreference() async {
+    final preferences = await SharedPreferences.getInstance();
+    if (!mounted) return;
+    setState(() {
+      _modernLayout = preferences.getBool('kitchen_pos_modern_layout') ?? true;
+    });
+  }
+
+  Future<void> _selectLayout(bool modern) async {
+    if (_modernLayout == modern) return;
+    setState(() => _modernLayout = modern);
+    final preferences = await SharedPreferences.getInstance();
+    await preferences.setBool('kitchen_pos_modern_layout', modern);
+  }
 
   bool get _offlineSession =>
       ref.read(authControllerProvider).asData?.value == 'offline-local-session';
@@ -401,6 +428,24 @@ class _KitchenPosScreenState extends ConsumerState<KitchenPosScreen> {
           _grossDiscount = min((enteredAmount * 100).round(), maximum);
           _keypadInput = '';
         });
+      } else if (_keypadMode == 'price' &&
+          enteredAmount != null &&
+          enteredAmount >= 0) {
+        setState(() {
+          final updated = line.copyWith(
+            unitPriceOverride: (enteredAmount * 100).round(),
+          );
+          _lines[line.lineId] = updated.copyWith(
+            discount: updated.discount.clamp(0, updated.subtotal),
+          );
+          final maximum = _lines.values.fold<int>(
+            0,
+            (sum, item) => sum + _kitchenLineTotal(item),
+          );
+          _grossDiscount = min(_grossDiscount, maximum);
+          _keypadInput = '';
+          _selectedLineId = line.lineId;
+        });
       } else if (enteredQuantity != null &&
           enteredQuantity > 0 &&
           enteredQuantity <= 999) {
@@ -415,14 +460,14 @@ class _KitchenPosScreenState extends ConsumerState<KitchenPosScreen> {
       return;
     }
     if (value == '.') {
-      if (_keypadMode == 'discount' && !_keypadInput.contains('.')) {
+      if (_keypadMode != 'qty' && !_keypadInput.contains('.')) {
         setState(
           () => _keypadInput = _keypadInput.isEmpty ? '0.' : '$_keypadInput.',
         );
       }
       return;
     }
-    final maximumLength = _keypadMode == 'discount' ? 8 : 3;
+    final maximumLength = _keypadMode == 'qty' ? 3 : 8;
     if (_keypadInput.length < maximumLength) {
       setState(() => _keypadInput += value);
     }
@@ -912,12 +957,83 @@ class _KitchenPosScreenState extends ConsumerState<KitchenPosScreen> {
         ],
       ),
     );
-    controller.dispose();
+    Future<void>.delayed(const Duration(milliseconds: 400), controller.dispose);
     if (note != null && mounted) {
       setState(() {
         _lines[line.lineId] = line.copyWith(itemNote: note.trim());
       });
     }
+  }
+
+  Future<void> _editLinePrice(CartLine line) async {
+    final controller = TextEditingController(
+      text: (line.unitPrice / 100).toStringAsFixed(2),
+    );
+    final formKey = GlobalKey<FormState>();
+    final amount = await showDialog<int>(
+      context: context,
+      builder: (dialogContext) {
+        void apply() {
+          if (!formKey.currentState!.validate()) return;
+          Navigator.pop(
+            dialogContext,
+            (double.parse(controller.text.trim()) * 100).round(),
+          );
+        }
+
+        return AlertDialog(
+          title: Text('Edit price: ${line.product.name}'),
+          content: Form(
+            key: formKey,
+            child: TextFormField(
+              key: const ValueKey('kitchen-line-price-field'),
+              controller: controller,
+              autofocus: true,
+              keyboardType: const TextInputType.numberWithOptions(
+                decimal: true,
+              ),
+              decoration: const InputDecoration(
+                labelText: 'Unit price',
+                helperText: 'Price for one item, before modifiers',
+                prefixIcon: Icon(Icons.payments_outlined),
+              ),
+              validator: (value) {
+                final parsed = double.tryParse(value?.trim() ?? '');
+                return parsed == null || parsed < 0
+                    ? 'Enter a valid amount'
+                    : null;
+              },
+              onFieldSubmitted: (_) => apply(),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('Cancel'),
+            ),
+            if (line.unitPriceOverride != null)
+              TextButton(
+                onPressed: () => Navigator.pop(dialogContext, -1),
+                child: const Text('Use default price'),
+              ),
+            FilledButton(onPressed: apply, child: const Text('Apply')),
+          ],
+        );
+      },
+    );
+    Future<void>.delayed(const Duration(milliseconds: 400), controller.dispose);
+    if (amount == null || !mounted || _orderLocked) return;
+    setState(() {
+      final current = _lines[line.lineId];
+      if (current == null) return;
+      final updated = amount < 0
+          ? current.copyWith(clearUnitPriceOverride: true)
+          : current.copyWith(unitPriceOverride: amount);
+      _lines[line.lineId] = updated.copyWith(
+        discount: updated.discount.clamp(0, updated.subtotal),
+      );
+      _selectedLineId = line.lineId;
+    });
   }
 
   Future<void> _showOrders(String locationId, {required bool heldOnly}) async {
@@ -1726,7 +1842,9 @@ class _KitchenPosScreenState extends ConsumerState<KitchenPosScreen> {
     }
     final products = _visible(store);
     final width = MediaQuery.sizeOf(context).width;
-    final desktop = width >= 1100;
+    final modernDesktop = _modernLayout && width >= 1100;
+    final classicDesktop = !_modernLayout && width >= 960;
+    final desktop = modernDesktop || classicDesktop;
     final subtotal = _lines.values.fold<int>(
       0,
       (sum, line) => sum + line.subtotal,
@@ -1753,12 +1871,12 @@ class _KitchenPosScreenState extends ConsumerState<KitchenPosScreen> {
       child: Focus(
         autofocus: true,
         child: ColoredBox(
-          color: desktop ? _desktopCanvas : AppColors.canvas,
+          color: modernDesktop ? _desktopCanvas : AppColors.canvas,
           child: Column(
             children: [
               _header(desktop, restaurantContext, locationId, orderTypes),
               Expanded(
-                child: desktop
+                child: modernDesktop
                     ? Padding(
                         padding: const EdgeInsets.fromLTRB(10, 8, 10, 10),
                         child: Row(
@@ -1780,17 +1898,40 @@ class _KitchenPosScreenState extends ConsumerState<KitchenPosScreen> {
                               ),
                             ),
                             const SizedBox(width: 10),
-                            Expanded(
-                              flex: 25,
-                              child: _desktopControlRail(
-                                store: store,
-                                customer: _customer(store),
-                                restaurant: restaurantContext,
-                                orderTypes: orderTypes,
-                              ),
-                            ),
+                            Expanded(flex: 25, child: _desktopControlRail()),
                           ],
                         ),
+                      )
+                    : classicDesktop
+                    ? Row(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          Expanded(
+                            child: _catalog(store, products, desktop: true),
+                          ),
+                          _KitchenResizeHandle(
+                            onDrag: (delta) => setState(() {
+                              _classicOrderPanelWidth =
+                                  (_classicOrderPanelWidth - delta).clamp(
+                                    340.0,
+                                    width - 560.0,
+                                  );
+                            }),
+                          ),
+                          SizedBox(
+                            width: _classicOrderPanelWidth.clamp(
+                              340.0,
+                              width - 560.0,
+                            ),
+                            child: _order(
+                              total,
+                              subtotal: subtotal,
+                              tax: tax,
+                              desktop: true,
+                              showControls: true,
+                            ),
+                          ),
+                        ],
                       )
                     : Column(
                         children: [
@@ -1929,12 +2070,7 @@ class _KitchenPosScreenState extends ConsumerState<KitchenPosScreen> {
     );
   }
 
-  Widget _desktopControlRail({
-    required AppState store,
-    required Customer? customer,
-    required _RestaurantContext? restaurant,
-    required List<PosOrderType> orderTypes,
-  }) {
+  Widget _desktopControlRail() {
     final short = MediaQuery.sizeOf(context).height < 850;
     return Container(
       padding: EdgeInsets.all(short ? 10 : 14),
@@ -1957,51 +2093,46 @@ class _KitchenPosScreenState extends ConsumerState<KitchenPosScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                const Text(
-                  'Order type',
-                  style: TextStyle(fontSize: 14, fontWeight: FontWeight.w800),
-                ),
-                const SizedBox(height: 7),
                 Row(
                   children: [
-                    for (final option in orderTypes)
-                      Expanded(
-                        child: Padding(
-                          padding: const EdgeInsets.only(right: 5),
-                          child: _mobileServiceButton(
-                            option,
-                            restaurant?.serviceTypes ?? const [],
-                          ),
-                        ),
+                    Container(
+                      width: 36,
+                      height: 36,
+                      decoration: BoxDecoration(
+                        color: AppColors.primary.withValues(alpha: .22),
+                        borderRadius: BorderRadius.circular(10),
                       ),
-                  ],
-                ),
-                if (_service == 'Dine in') ...[
-                  const SizedBox(height: 7),
-                  _tableCard(restaurant?.tables ?? const [], mobile: true),
-                ],
-                const SizedBox(height: 7),
-                _customerButton(store, customer, mobile: true),
-                const SizedBox(height: 7),
-                Row(
-                  children: [
-                    Expanded(child: _guestCard(mobile: true)),
-                    const SizedBox(width: 6),
-                    Expanded(
-                      flex: 2,
-                      child: _waiterCard(
-                        restaurant?.staff ?? const [],
-                        mobile: true,
+                      child: const Icon(
+                        Icons.dialpad_rounded,
+                        color: _desktopAccent,
+                        size: 20,
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    const Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Quick edit keypad',
+                            style: TextStyle(
+                              fontSize: 15,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                          Text(
+                            'Select an item, then enter a value',
+                            style: TextStyle(
+                              color: _desktopTextMuted,
+                              fontSize: 11,
+                            ),
+                          ),
+                        ],
                       ),
                     ),
                   ],
                 ),
-                Divider(height: short ? 12 : 20),
-                const Text(
-                  'Dedicated keypad',
-                  style: TextStyle(fontSize: 14, fontWeight: FontWeight.w800),
-                ),
-                const SizedBox(height: 7),
+                const SizedBox(height: 12),
                 _numericKeypad(),
                 SizedBox(height: short ? 12 : 20),
                 Divider(height: short ? 1 : 8),
@@ -2181,6 +2312,36 @@ class _KitchenPosScreenState extends ConsumerState<KitchenPosScreen> {
             ),
           ),
         ),
+        PopupMenuButton<bool>(
+          key: const ValueKey('kitchen-layout-switcher'),
+          tooltip: 'Kitchen POS layout',
+          initialValue: _modernLayout,
+          onSelected: (value) => unawaited(_selectLayout(value)),
+          itemBuilder: (_) => const [
+            PopupMenuItem(
+              value: true,
+              child: ListTile(
+                dense: true,
+                leading: Icon(Icons.dashboard_customize_outlined),
+                title: Text('Modern layout'),
+              ),
+            ),
+            PopupMenuItem(
+              value: false,
+              child: ListTile(
+                dense: true,
+                leading: Icon(Icons.view_sidebar_outlined),
+                title: Text('Classic layout'),
+              ),
+            ),
+          ],
+          icon: Icon(
+            _modernLayout
+                ? Icons.dashboard_customize_outlined
+                : Icons.view_sidebar_outlined,
+            color: Colors.white,
+          ),
+        ),
         _quickPrintToggle(),
         const SizedBox(width: 4),
         IconButton(
@@ -2234,6 +2395,84 @@ class _KitchenPosScreenState extends ConsumerState<KitchenPosScreen> {
         ],
       ],
     );
+    final classicControls = SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: Row(
+        children: [
+          _customerButton(store, customer),
+          const SizedBox(width: 6),
+          for (final option in orderTypes) ...[
+            SizedBox(
+              width: 112,
+              child: _mobileServiceButton(
+                option,
+                restaurant?.serviceTypes ?? const [],
+              ),
+            ),
+            const SizedBox(width: 6),
+          ],
+          if (_service == 'Dine in') ...[
+            _tableCard(restaurant?.tables ?? const []),
+            const SizedBox(width: 6),
+          ],
+          _guestCard(),
+          _waiterCard(restaurant?.staff ?? const []),
+        ],
+      ),
+    );
+    final modernControls = SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10),
+            height: 36,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: .10),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: const Row(
+              children: [
+                Icon(
+                  Icons.receipt_long_outlined,
+                  size: 16,
+                  color: Colors.white70,
+                ),
+                SizedBox(width: 6),
+                Text(
+                  'Order details',
+                  style: TextStyle(
+                    color: Colors.white70,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          for (final option in orderTypes) ...[
+            SizedBox(
+              width: 112,
+              child: _mobileServiceButton(
+                option,
+                restaurant?.serviceTypes ?? const [],
+              ),
+            ),
+            const SizedBox(width: 6),
+          ],
+          if (_service == 'Dine in') ...[
+            _tableCard(restaurant?.tables ?? const []),
+            const SizedBox(width: 6),
+          ],
+          _customerButton(store, customer),
+          const SizedBox(width: 6),
+          _guestCard(),
+          _waiterCard(restaurant?.staff ?? const []),
+        ],
+      ),
+    );
     return Container(
       margin: EdgeInsets.fromLTRB(desktop ? 10 : 8, 6, desktop ? 10 : 8, 0),
       padding: EdgeInsets.symmetric(
@@ -2244,8 +2483,16 @@ class _KitchenPosScreenState extends ConsumerState<KitchenPosScreen> {
         color: AppColors.primaryDark,
         borderRadius: BorderRadius.circular(8),
       ),
-      child: desktop
-          ? title
+      child: desktop && _modernLayout
+          ? Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [title, const SizedBox(height: 7), modernControls],
+            )
+          : desktop
+          ? Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [title, const SizedBox(height: 7), classicControls],
+            )
           : Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -2548,7 +2795,7 @@ class _KitchenPosScreenState extends ConsumerState<KitchenPosScreen> {
   }) {
     final categories = store.categories.where((item) => item.active).toList();
     final arabic = Localizations.localeOf(context).languageCode == 'ar';
-    final wide = MediaQuery.sizeOf(context).width >= 1100;
+    final wide = _useModernDesktop(context);
     return Container(
       padding: EdgeInsets.all(wide ? 10 : 8),
       decoration: BoxDecoration(
@@ -2713,7 +2960,7 @@ class _KitchenPosScreenState extends ConsumerState<KitchenPosScreen> {
     bool arabic,
   ) {
     final mobile = MediaQuery.sizeOf(context).width < 600;
-    final desktop = MediaQuery.sizeOf(context).width >= 1100;
+    final desktop = _useModernDesktop(context);
     if (desktop) {
       return Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -2803,7 +3050,7 @@ class _KitchenPosScreenState extends ConsumerState<KitchenPosScreen> {
     bool horizontal = false,
   }) {
     final selected = _category == id;
-    final desktop = MediaQuery.sizeOf(context).width >= 1100;
+    final desktop = _useModernDesktop(context);
     final colorIndex = (paletteIndex ?? 0) % _categoryBackgrounds.length;
     final background = id.isEmpty
         ? AppColors.primary
@@ -2893,7 +3140,7 @@ class _KitchenPosScreenState extends ConsumerState<KitchenPosScreen> {
     }
     return LayoutBuilder(
       builder: (context, constraints) {
-        final desktop = MediaQuery.sizeOf(context).width >= 1100;
+        final desktop = _useModernDesktop(context);
         final columns = constraints.maxWidth >= 1120
             ? 8
             : constraints.maxWidth >= 800
@@ -2999,206 +3246,219 @@ class _KitchenPosScreenState extends ConsumerState<KitchenPosScreen> {
     required int tax,
     required bool desktop,
     required bool showControls,
-  }) => Container(
-    margin: desktop ? EdgeInsets.zero : const EdgeInsets.fromLTRB(0, 8, 8, 8),
-    padding: EdgeInsets.all(MediaQuery.sizeOf(context).height < 720 ? 7 : 10),
-    decoration: BoxDecoration(
-      color: desktop ? _desktopSurface : Colors.white,
-      border: Border.all(color: desktop ? AppColors.primary : _border),
-      borderRadius: BorderRadius.circular(12),
-    ),
-    child: DefaultTextStyle.merge(
-      style: TextStyle(color: desktop ? Colors.white : AppColors.ink),
-      child: Column(
-        mainAxisSize: desktop ? MainAxisSize.max : MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Row(
-            children: [
-              const Expanded(
-                child: Text(
-                  'Current Order',
-                  style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800),
-                ),
-              ),
-              Text(
-                '${_lines.length} items',
-                style: TextStyle(
-                  fontSize: 11,
-                  color: desktop ? _desktopTextMuted : AppColors.muted,
-                ),
-              ),
-              const SizedBox(width: 4),
-              IconButton(
-                tooltip: _note.isEmpty ? 'Add order note' : 'Edit order note',
-                onPressed: _orderLocked ? null : _editNote,
-                icon: const Icon(Icons.note_add_outlined, size: 17),
-                visualDensity: VisualDensity.compact,
-                constraints: const BoxConstraints.tightFor(
-                  width: 32,
-                  height: 32,
-                ),
-                padding: EdgeInsets.zero,
-              ),
-              TextButton(
-                onPressed: _lines.isEmpty || _orderLocked
-                    ? null
-                    : () => setState(() {
-                        _lines.clear();
-                        _grossDiscount = 0;
-                      }),
-                style: TextButton.styleFrom(
-                  foregroundColor: AppColors.danger,
-                  minimumSize: const Size(0, 32),
-                  padding: const EdgeInsets.symmetric(horizontal: 4),
-                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                  visualDensity: VisualDensity.compact,
-                ),
-                child: const Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(Icons.delete_outline, size: 17),
-                    SizedBox(width: 4),
-                    Text('Clear All'),
-                  ],
-                ),
-              ),
-            ],
-          ),
-          Divider(
-            height: desktop && MediaQuery.sizeOf(context).height < 720 ? 4 : 10,
-          ),
-          if (desktop)
-            Expanded(child: _orderItems())
-          else
-            SizedBox(height: 220, child: _orderItems()),
-          if (!desktop || _note.isNotEmpty)
-            OutlinedButton.icon(
-              onPressed: _orderLocked ? null : _editNote,
-              icon: const Icon(Icons.note_add_outlined, size: 17),
-              label: Align(
-                alignment: Alignment.centerLeft,
-                child: Text(
-                  _note.isEmpty ? 'Add order note…' : _note,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
-              style: OutlinedButton.styleFrom(
-                alignment: Alignment.centerLeft,
-                minimumSize: const Size(0, 34),
-                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                foregroundColor: AppColors.muted,
-              ),
-            ),
-          Divider(
-            height: desktop && MediaQuery.sizeOf(context).height < 720 ? 6 : 12,
-          ),
-          if (desktop && MediaQuery.sizeOf(context).height < 720)
+  }) {
+    final modernStyle = _useModernDesktop(context);
+    return Container(
+      margin: desktop ? EdgeInsets.zero : const EdgeInsets.fromLTRB(0, 8, 8, 8),
+      padding: EdgeInsets.all(MediaQuery.sizeOf(context).height < 720 ? 7 : 10),
+      decoration: BoxDecoration(
+        color: modernStyle ? _desktopSurface : Colors.white,
+        border: Border.all(color: modernStyle ? AppColors.primary : _border),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: DefaultTextStyle.merge(
+        style: TextStyle(color: modernStyle ? Colors.white : AppColors.ink),
+        child: Column(
+          mainAxisSize: desktop ? MainAxisSize.max : MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
             Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Text(
-                  '${context.tr('Sub')} ${moneyAmount(subtotal)}',
-                  style: const TextStyle(fontSize: 11),
-                ),
-                Text(
-                  '${context.tr('Tax')} ${moneyAmount(tax)}',
-                  style: const TextStyle(fontSize: 11),
-                ),
-                InkWell(
-                  onTap: _lines.isEmpty || _orderLocked
-                      ? null
-                      : _editGrossDiscount,
+                const Expanded(
                   child: Text(
-                    '${context.tr('Disc')} ${moneyAmount(_grossDiscount)}',
-                    style: const TextStyle(fontSize: 11),
+                    'Current Order',
+                    style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800),
+                  ),
+                ),
+                Text(
+                  '${_lines.length} items',
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: modernStyle ? _desktopTextMuted : AppColors.muted,
+                  ),
+                ),
+                const SizedBox(width: 4),
+                IconButton(
+                  tooltip: _note.isEmpty ? 'Add order note' : 'Edit order note',
+                  onPressed: _orderLocked ? null : _editNote,
+                  icon: const Icon(Icons.note_add_outlined, size: 17),
+                  visualDensity: VisualDensity.compact,
+                  constraints: const BoxConstraints.tightFor(
+                    width: 32,
+                    height: 32,
+                  ),
+                  padding: EdgeInsets.zero,
+                ),
+                TextButton(
+                  onPressed: _lines.isEmpty || _orderLocked
+                      ? null
+                      : () => setState(() {
+                          _lines.clear();
+                          _grossDiscount = 0;
+                        }),
+                  style: TextButton.styleFrom(
+                    foregroundColor: AppColors.danger,
+                    minimumSize: const Size(0, 32),
+                    padding: const EdgeInsets.symmetric(horizontal: 4),
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    visualDensity: VisualDensity.compact,
+                  ),
+                  child: const Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.delete_outline, size: 17),
+                      SizedBox(width: 4),
+                      Text('Clear All'),
+                    ],
                   ),
                 ),
               ],
-            )
-          else ...[
-            _amountRow('Subtotal', subtotal),
-            const SizedBox(height: 5),
-            _amountRow('Tax', tax),
-            const SizedBox(height: 5),
-            InkWell(
-              onTap: _lines.isEmpty || _orderLocked ? null : _editGrossDiscount,
-              borderRadius: BorderRadius.circular(6),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(vertical: 4),
-                child: Row(
-                  children: [
-                    const Expanded(child: Text('Discount')),
-                    RiyalAmount(-_grossDiscount),
-                    const SizedBox(width: 4),
-                    const Icon(Icons.edit_outlined, size: 15),
-                  ],
-                ),
-              ),
             ),
-          ],
-          Divider(
-            height: desktop && MediaQuery.sizeOf(context).height < 720 ? 6 : 12,
-          ),
-          Row(
-            children: [
-              const Expanded(
-                child: Text(
-                  'Total',
-                  style: TextStyle(fontWeight: FontWeight.w800),
+            Divider(
+              height: desktop && MediaQuery.sizeOf(context).height < 720
+                  ? 4
+                  : 10,
+            ),
+            if (desktop)
+              Expanded(child: _orderItems())
+            else
+              SizedBox(height: 220, child: _orderItems()),
+            if (!desktop || _note.isNotEmpty)
+              OutlinedButton.icon(
+                onPressed: _orderLocked ? null : _editNote,
+                icon: const Icon(Icons.note_add_outlined, size: 17),
+                label: Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    _note.isEmpty ? 'Add order note…' : _note,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                style: OutlinedButton.styleFrom(
+                  alignment: Alignment.centerLeft,
+                  minimumSize: const Size(0, 34),
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  foregroundColor: AppColors.muted,
                 ),
               ),
-              RiyalAmount(
-                total,
-                key: const ValueKey('kitchen-order-total'),
-                style: TextStyle(
-                  color: desktop ? _desktopAccent : AppColors.primary,
-                  fontSize: 19,
-                  fontWeight: FontWeight.w900,
+            Divider(
+              height: desktop && MediaQuery.sizeOf(context).height < 720
+                  ? 6
+                  : 12,
+            ),
+            if (desktop && MediaQuery.sizeOf(context).height < 720)
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    '${context.tr('Sub')} ${moneyAmount(subtotal)}',
+                    style: const TextStyle(fontSize: 11),
+                  ),
+                  Text(
+                    '${context.tr('Tax')} ${moneyAmount(tax)}',
+                    style: const TextStyle(fontSize: 11),
+                  ),
+                  InkWell(
+                    onTap: _lines.isEmpty || _orderLocked
+                        ? null
+                        : _editGrossDiscount,
+                    child: Text(
+                      '${context.tr('Disc')} ${moneyAmount(_grossDiscount)}',
+                      style: const TextStyle(fontSize: 11),
+                    ),
+                  ),
+                ],
+              )
+            else ...[
+              _amountRow('Subtotal', subtotal),
+              const SizedBox(height: 5),
+              _amountRow('Tax', tax),
+              const SizedBox(height: 5),
+              InkWell(
+                onTap: _lines.isEmpty || _orderLocked
+                    ? null
+                    : _editGrossDiscount,
+                borderRadius: BorderRadius.circular(6),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 4),
+                  child: Row(
+                    children: [
+                      const Expanded(child: Text('Discount')),
+                      RiyalAmount(-_grossDiscount),
+                      const SizedBox(width: 4),
+                      const Icon(Icons.edit_outlined, size: 15),
+                    ],
+                  ),
                 ),
               ),
             ],
-          ),
-          SizedBox(
-            height: desktop && MediaQuery.sizeOf(context).height < 720 ? 3 : 6,
-          ),
-          if (_savedTransactionId != null || _orderLocked) ...[
-            Text(
-              _savedTransactionId != null
-                  ? 'Order #$_savedTransactionId is saved. Retry kitchen printing; do not create the sale again.'
-                  : 'Submission was not confirmed. Retry this same order to avoid a duplicate sale.',
-              style: const TextStyle(color: AppColors.muted, fontSize: 11),
+            Divider(
+              height: desktop && MediaQuery.sizeOf(context).height < 720
+                  ? 6
+                  : 12,
             ),
-            const SizedBox(height: 6),
-          ],
-          if (showControls &&
-              desktop &&
-              MediaQuery.sizeOf(context).height < 800)
-            _compactOrderActions()
-          else if (showControls) ...[
-            _restaurantOrderActions(),
-          ],
-          if (showControls && desktop) ...[
-            SizedBox(height: MediaQuery.sizeOf(context).height < 720 ? 0 : 6),
-            _numericKeypad(),
-          ],
-          if (_activeOrder != null) ...[
-            const SizedBox(height: 6),
-            Text(
-              'Editing ${_activeOrder!.invoiceNo.isEmpty ? 'order #${_activeOrder!.serverId}' : _activeOrder!.invoiceNo}',
-              textAlign: TextAlign.center,
-              style: const TextStyle(
-                color: AppColors.primary,
-                fontWeight: FontWeight.w700,
-                fontSize: 11,
+            Row(
+              children: [
+                const Expanded(
+                  child: Text(
+                    'Total',
+                    style: TextStyle(fontWeight: FontWeight.w800),
+                  ),
+                ),
+                RiyalAmount(
+                  total,
+                  key: const ValueKey('kitchen-order-total'),
+                  style: TextStyle(
+                    color: modernStyle ? _desktopAccent : AppColors.primary,
+                    fontSize: 19,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ],
+            ),
+            SizedBox(
+              height: desktop && MediaQuery.sizeOf(context).height < 720
+                  ? 3
+                  : 6,
+            ),
+            if (_savedTransactionId != null || _orderLocked) ...[
+              Text(
+                _savedTransactionId != null
+                    ? 'Order #$_savedTransactionId is saved. Retry kitchen printing; do not create the sale again.'
+                    : 'Submission was not confirmed. Retry this same order to avoid a duplicate sale.',
+                style: const TextStyle(color: AppColors.muted, fontSize: 11),
               ),
-            ),
+              const SizedBox(height: 6),
+            ],
+            if (showControls &&
+                desktop &&
+                MediaQuery.sizeOf(context).height < 800)
+              _compactOrderActions()
+            else if (showControls) ...[
+              _restaurantOrderActions(),
+            ],
+            if (showControls && desktop) ...[
+              SizedBox(height: MediaQuery.sizeOf(context).height < 720 ? 0 : 6),
+              _numericKeypad(),
+            ],
+            if (_activeOrder != null) ...[
+              const SizedBox(height: 6),
+              Text(
+                'Editing ${_activeOrder!.invoiceNo.isEmpty ? 'order #${_activeOrder!.serverId}' : _activeOrder!.invoiceNo}',
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  color: AppColors.primary,
+                  fontWeight: FontWeight.w700,
+                  fontSize: 11,
+                ),
+              ),
+            ],
           ],
-        ],
+        ),
       ),
-    ),
-  );
+    );
+  }
 
   Widget _compactOrderActions() {
     return _restaurantOrderActions(compact: true);
@@ -3387,16 +3647,23 @@ class _KitchenPosScreenState extends ConsumerState<KitchenPosScreen> {
 
   Widget _numericKeypad() {
     final compactHeight = MediaQuery.sizeOf(context).height < 850;
-    final keyHeight = compactHeight ? 44.0 : 48.0;
-    final modeHeight = compactHeight ? 38.0 : 42.0;
+    final modernStyle = _useModernDesktop(context);
+    final keyHeight = modernStyle
+        ? (compactHeight ? 42.0 : 50.0)
+        : (compactHeight ? 44.0 : 48.0);
+    final modeHeight = modernStyle
+        ? (compactHeight ? 40.0 : 42.0)
+        : (compactHeight ? 38.0 : 42.0);
     final keyFontSize = compactHeight ? 17.0 : 19.0;
-    final gap = compactHeight ? 5.0 : 7.0;
+    final gap = modernStyle
+        ? (compactHeight ? 5.0 : 8.0)
+        : (compactHeight ? 5.0 : 7.0);
     Widget keypadKey(
       String label, {
       String? value,
       Color foregroundColor = AppColors.ink,
-      Color backgroundColor = const Color(0xFFE7F1F8),
-      Color borderColor = const Color(0xFFB8D2E3),
+      Color backgroundColor = const Color(0xFFF5F8F9),
+      Color borderColor = const Color(0xFFCBD8DC),
     }) => Expanded(
       child: OutlinedButton(
         key: ValueKey('kitchen-keypad-${value ?? label}'),
@@ -3411,7 +3678,9 @@ class _KitchenPosScreenState extends ConsumerState<KitchenPosScreen> {
           disabledForegroundColor: AppColors.muted,
           disabledBackgroundColor: const Color(0xFFF2F4F3),
           side: BorderSide(color: borderColor),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(9)),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
           textStyle: TextStyle(
             fontSize: keyFontSize,
             fontWeight: FontWeight.w900,
@@ -3435,14 +3704,14 @@ class _KitchenPosScreenState extends ConsumerState<KitchenPosScreen> {
       padding: EdgeInsets.zero,
       tapTargetSize: MaterialTapTargetSize.shrinkWrap,
       visualDensity: VisualDensity.compact,
-      backgroundColor: selected ? AppColors.primary : const Color(0xFFEAF4F1),
-      foregroundColor: selected ? Colors.white : AppColors.primary,
+      backgroundColor: selected ? AppColors.primary : const Color(0xFF18343C),
+      foregroundColor: selected ? Colors.white : const Color(0xFFB8CFD3),
       disabledBackgroundColor: const Color(0xFFF1F3F2),
       disabledForegroundColor: const Color(0xFF9AA5A2),
       side: BorderSide(
-        color: selected ? AppColors.primary : const Color(0xFFB9D5CE),
+        color: selected ? AppColors.primary : const Color(0xFF456069),
       ),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(9)),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(11)),
       textStyle: TextStyle(
         fontSize: compactHeight ? 14 : 15,
         fontWeight: FontWeight.w800,
@@ -3450,6 +3719,62 @@ class _KitchenPosScreenState extends ConsumerState<KitchenPosScreen> {
     );
     return Column(
       children: [
+        if (modernStyle)
+          Container(
+            width: double.infinity,
+            height: compactHeight ? 50 : 58,
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            margin: EdgeInsets.only(bottom: gap),
+            decoration: BoxDecoration(
+              color: const Color(0xFF0A1E24),
+              border: Border.all(color: const Color(0xFF35515A)),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        switch (_keypadMode) {
+                          'discount' => 'DISCOUNT',
+                          'price' => 'UNIT PRICE',
+                          _ => 'QUANTITY',
+                        },
+                        style: const TextStyle(
+                          color: _desktopTextMuted,
+                          fontSize: 10,
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: 1.1,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        _keypadInput.isEmpty ? '—' : _keypadInput,
+                        key: const ValueKey('kitchen-keypad-display'),
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 22,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                Icon(
+                  switch (_keypadMode) {
+                    'discount' => Icons.percent_rounded,
+                    'price' => Icons.price_change_outlined,
+                    _ => Icons.numbers_rounded,
+                  },
+                  color: _desktopAccent,
+                  size: 23,
+                ),
+              ],
+            ),
+          ),
         Row(
           children: [
             Expanded(
@@ -3469,9 +3794,18 @@ class _KitchenPosScreenState extends ConsumerState<KitchenPosScreen> {
             SizedBox(width: gap),
             Expanded(
               child: OutlinedButton(
-                onPressed: null,
-                style: modeStyle(false),
-                child: const Text('Price'),
+                onPressed: _orderLocked || _lines.isEmpty
+                    ? null
+                    : () => setState(() {
+                        _keypadMode = 'price';
+                        _keypadInput = '';
+                      }),
+                style: modeStyle(_keypadMode == 'price'),
+                child: Text(
+                  _keypadMode == 'price' && _keypadInput.isNotEmpty
+                      ? 'Price $_keypadInput'
+                      : 'Price',
+                ),
               ),
             ),
             SizedBox(width: gap),
@@ -3507,8 +3841,8 @@ class _KitchenPosScreenState extends ConsumerState<KitchenPosScreen> {
           keypadKey(
             '+',
             foregroundColor: AppColors.primary,
-            backgroundColor: const Color(0xFFE4F2EE),
-            borderColor: const Color(0xFFACD2C8),
+            backgroundColor: const Color(0xFFDFF1EC),
+            borderColor: const Color(0xFF9DC9BE),
           ),
         ]),
         SizedBox(height: gap),
@@ -3520,8 +3854,8 @@ class _KitchenPosScreenState extends ConsumerState<KitchenPosScreen> {
             '−',
             value: '-',
             foregroundColor: AppColors.primary,
-            backgroundColor: const Color(0xFFE4F2EE),
-            borderColor: const Color(0xFFACD2C8),
+            backgroundColor: const Color(0xFFDFF1EC),
+            borderColor: const Color(0xFF9DC9BE),
           ),
         ]),
         SizedBox(height: gap),
@@ -3552,7 +3886,7 @@ class _KitchenPosScreenState extends ConsumerState<KitchenPosScreen> {
                 tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                 visualDensity: VisualDensity.compact,
                 shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(9),
+                  borderRadius: BorderRadius.circular(12),
                 ),
                 textStyle: const TextStyle(
                   fontSize: 17,
@@ -3568,7 +3902,7 @@ class _KitchenPosScreenState extends ConsumerState<KitchenPosScreen> {
   }
 
   Widget _amountRow(String label, int amount) {
-    final desktop = MediaQuery.sizeOf(context).width >= 1100;
+    final desktop = _useModernDesktop(context);
     return Row(
       children: [
         Expanded(
@@ -3592,28 +3926,45 @@ class _KitchenPosScreenState extends ConsumerState<KitchenPosScreen> {
       return const Center(child: Text('Tap an item to start an order.'));
     }
     final lines = _lines.values.toList(growable: false);
-    final desktop = MediaQuery.sizeOf(context).width >= 1100;
+    final desktop = _useModernDesktop(context);
+    final selectedLineId = _lines.containsKey(_selectedLineId)
+        ? _selectedLineId
+        : lines.last.lineId;
     return ListView.separated(
       itemCount: lines.length,
-      separatorBuilder: (_, __) => const Divider(height: 1),
+      separatorBuilder: (_, __) => const SizedBox(height: 4),
       itemBuilder: (_, index) {
         final line = lines[index];
-        final selected = (_selectedLineId ?? lines.last.lineId) == line.lineId;
+        final selected = selectedLineId == line.lineId;
         return InkWell(
+          key: ValueKey('kitchen-order-line-${line.lineId}'),
           onTap: () => _selectLine(line),
-          borderRadius: BorderRadius.circular(6),
-          child: Container(
-            padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 4),
+          borderRadius: BorderRadius.circular(9),
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 140),
+            padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 8),
             decoration: BoxDecoration(
               color: selected
                   ? desktop
-                        ? _desktopSurfaceRaised
-                        : const Color(0xFFF0F8F5)
+                        ? AppColors.primary.withValues(alpha: .22)
+                        : const Color(0xFFE3F4EF)
                   : Colors.transparent,
-              border: selected && desktop
-                  ? Border.all(color: _desktopBorder)
+              border: Border.all(
+                color: selected
+                    ? (desktop ? _desktopAccent : AppColors.primary)
+                    : Colors.transparent,
+                width: selected ? 2 : 1,
+              ),
+              borderRadius: BorderRadius.circular(9),
+              boxShadow: selected
+                  ? [
+                      BoxShadow(
+                        color: AppColors.primary.withValues(alpha: .14),
+                        blurRadius: 8,
+                        offset: const Offset(0, 2),
+                      ),
+                    ]
                   : null,
-              borderRadius: BorderRadius.circular(6),
             ),
             child: Row(
               children: [
@@ -3657,11 +4008,39 @@ class _KitchenPosScreenState extends ConsumerState<KitchenPosScreen> {
                           ),
                         ),
                       ),
-                      RiyalAmount(
-                        line.subtotal,
-                        style: TextStyle(
-                          color: desktop ? _desktopAccent : AppColors.ink,
-                        ),
+                      Wrap(
+                        spacing: 7,
+                        runSpacing: 3,
+                        crossAxisAlignment: WrapCrossAlignment.center,
+                        children: [
+                          RiyalAmount(
+                            line.subtotal,
+                            style: TextStyle(
+                              color: desktop ? _desktopAccent : AppColors.ink,
+                            ),
+                          ),
+                          if (line.unitPriceOverride != null)
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 6,
+                                vertical: 2,
+                              ),
+                              decoration: BoxDecoration(
+                                color: AppColors.primary.withValues(alpha: .16),
+                                borderRadius: BorderRadius.circular(999),
+                              ),
+                              child: Text(
+                                'Custom price',
+                                style: TextStyle(
+                                  color: desktop
+                                      ? _desktopAccent
+                                      : AppColors.primary,
+                                  fontSize: 9,
+                                  fontWeight: FontWeight.w800,
+                                ),
+                              ),
+                            ),
+                        ],
                       ),
                       if (line.product.modifierGroups.any(
                         (group) => group.isActive,
@@ -3763,6 +4142,26 @@ class _KitchenPosScreenState extends ConsumerState<KitchenPosScreen> {
                     maximumSize: const Size.square(30),
                     tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                     side: const BorderSide(color: Color(0xFF98A6A1)),
+                  ),
+                ),
+                IconButton(
+                  key: ValueKey('kitchen-edit-price-${line.lineId}'),
+                  tooltip: 'Edit unit price',
+                  onPressed: _orderLocked
+                      ? null
+                      : () => unawaited(_editLinePrice(line)),
+                  icon: const Icon(Icons.price_change_outlined, size: 17),
+                  color: desktop ? _desktopAccent : AppColors.primary,
+                  visualDensity: VisualDensity.compact,
+                  constraints: const BoxConstraints.tightFor(
+                    width: 28,
+                    height: 30,
+                  ),
+                  padding: EdgeInsets.zero,
+                  style: IconButton.styleFrom(
+                    minimumSize: const Size(28, 30),
+                    maximumSize: const Size(28, 30),
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                   ),
                 ),
                 IconButton(

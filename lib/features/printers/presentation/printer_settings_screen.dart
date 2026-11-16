@@ -871,21 +871,21 @@ class _InvoiceDesignsPanelState extends ConsumerState<_InvoiceDesignsPanel> {
                       ),
                     ),
                     const SizedBox(width: 12),
-                    const Expanded(
+                    Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text(
+                          const Text(
                             'Offline invoice templates',
                             style: TextStyle(
                               fontSize: 18,
                               fontWeight: FontWeight.w800,
                             ),
                           ),
-                          SizedBox(height: 2),
+                          const SizedBox(height: 2),
                           Text(
-                            'All six bundled templates are available without an internet connection.',
-                            style: TextStyle(
+                            'All ${OfflineTemplateCatalog.presets.length} bundled templates are available without an internet connection.',
+                            style: const TextStyle(
                               color: AppColors.muted,
                               fontSize: 13,
                             ),

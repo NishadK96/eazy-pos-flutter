@@ -47,6 +47,34 @@ class OfflineTemplateCatalog {
       'thermal_58mm',
       58,
     ),
+    OfflineTemplatePreset(
+      'premium-executive-80mm',
+      'Premium Executive 80 mm',
+      'premium_executive',
+      'thermal_80mm',
+      80,
+    ),
+    OfflineTemplatePreset(
+      'premium-emerald-80mm',
+      'Premium Emerald 80 mm',
+      'premium_emerald',
+      'thermal_80mm',
+      80,
+    ),
+    OfflineTemplatePreset(
+      'premium-minimal-80mm',
+      'Premium Minimal 80 mm',
+      'premium_minimal',
+      'thermal_80mm',
+      80,
+    ),
+    OfflineTemplatePreset(
+      'premium-compact-58mm',
+      'Premium Compact 58 mm',
+      'premium_compact',
+      'thermal_58mm',
+      58,
+    ),
   ];
 
   static ErpInvoiceLayoutCatalog catalog(

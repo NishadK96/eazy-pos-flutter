@@ -7,6 +7,7 @@ import 'package:eazy_pos/shared/widgets/localized_text.dart' as localized;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 const _tea = Product(
   id: '1',
@@ -49,6 +50,60 @@ const _teaWithSize = Product(
 );
 
 void main() {
+  testWidgets('kitchen layout switches without clearing the order', (
+    tester,
+  ) async {
+    SharedPreferences.setMockInitialValues({});
+    tester.view.physicalSize = const Size(1280, 850);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final container = ProviderContainer();
+    addTearDown(container.dispose);
+    container
+        .read(appStoreProvider.notifier)
+        .replaceCatalog(
+          const [_tea],
+          [const Category(id: 'drinks', name: 'Beverages', icon: 'drink')],
+        );
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: const MaterialApp(home: Scaffold(body: KitchenPosScreen())),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('kitchen-product-1')));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const ValueKey('kitchen-layout-switcher')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Classic layout'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Current Order'), findsOneWidget);
+    expect(find.text('1 items'), findsOneWidget);
+    expect(
+      tester
+          .widget<RiyalAmount>(
+            find.byKey(const ValueKey('kitchen-order-total')),
+          )
+          .minorUnits,
+      1000,
+    );
+    expect(
+      (await SharedPreferences.getInstance()).getBool(
+        'kitchen_pos_modern_layout',
+      ),
+      isFalse,
+    );
+    await (await SharedPreferences.getInstance()).setBool(
+      'kitchen_pos_modern_layout',
+      true,
+    );
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('kitchen POS exposes searchable customer selection', (
     tester,
   ) async {
@@ -115,7 +170,7 @@ void main() {
         await tester.pumpAndSettle();
         await tester.tap(
           find.descendant(
-            of: find.byType(AlertDialog),
+            of: find.byType(Dialog),
             matching: find.text('Large'),
           ),
         );
@@ -197,9 +252,9 @@ void main() {
         final tableRect = tester.getRect(
           find.byKey(const ValueKey('kitchen-table-card')),
         );
-        expect(tableRect.left, greaterThan(size.width * .7));
+        expect(tableRect.top, lessThan(180));
         expect(tableRect.right, lessThanOrEqualTo(size.width));
-        expect(tableRect.height, greaterThanOrEqualTo(44));
+        expect(tableRect.height, greaterThanOrEqualTo(36));
         if (size.height < 720) {
           final keypadSeven = tester.getRect(
             find.byKey(const ValueKey('kitchen-keypad-7')),
@@ -321,6 +376,65 @@ void main() {
           )
           .minorUnits,
       750,
+    );
+    await tester.tap(find.widgetWithText(OutlinedButton, 'Price'));
+    await tester.tap(find.widgetWithText(OutlinedButton, '1'));
+    await tester.tap(find.widgetWithText(OutlinedButton, '2'));
+    await tester.tap(find.widgetWithText(OutlinedButton, '.'));
+    await tester.tap(find.widgetWithText(OutlinedButton, '5'));
+    await tester.tap(find.widgetWithText(OutlinedButton, '0'));
+    await tester.tap(find.widgetWithText(FilledButton, 'Enter'));
+    await tester.pumpAndSettle();
+    expect(
+      tester
+          .widget<RiyalAmount>(
+            find.byKey(const ValueKey('kitchen-order-total')),
+          )
+          .minorUnits,
+      1000,
+    );
+    expect(find.text('Custom price'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('order line unit price can be edited', (tester) async {
+    tester.view.physicalSize = const Size(1168, 660);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final container = ProviderContainer();
+    addTearDown(container.dispose);
+    container
+        .read(appStoreProvider.notifier)
+        .replaceCatalog(
+          const [_tea],
+          [const Category(id: 'drinks', name: 'Beverages', icon: 'drink')],
+        );
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: const MaterialApp(home: Scaffold(body: KitchenPosScreen())),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('kitchen-product-1')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('kitchen-edit-price-1')));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(const ValueKey('kitchen-line-price-field')),
+      '12.50',
+    );
+    await tester.tap(find.widgetWithText(FilledButton, 'Apply'));
+    await tester.pumpAndSettle();
+    expect(find.text('Custom price'), findsOneWidget);
+    expect(
+      tester
+          .widget<RiyalAmount>(
+            find.byKey(const ValueKey('kitchen-order-total')),
+          )
+          .minorUnits,
+      1250,
     );
     expect(tester.takeException(), isNull);
   });
