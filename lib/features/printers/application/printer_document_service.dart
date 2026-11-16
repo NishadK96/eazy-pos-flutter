@@ -9,6 +9,7 @@ import '../domain/printer_settings.dart';
 import '../../offline_pos/domain/provisional_receipt_qr.dart';
 import '../../../core/utils/pdf_fonts.dart';
 import 'android_bluetooth_printer.dart';
+import 'windows_raw_thermal_printer.dart';
 import '../../invoice_layouts/domain/invoice_layout_entities.dart';
 import '../../kitchen/domain/kitchen_entities.dart';
 
@@ -69,6 +70,13 @@ class PrinterDocumentService {
                     destination,
                     printableBytes,
                     format: printableFormat,
+                  )
+                : fitThermalPrintableWidth && WindowsRawThermalPrinter.supported
+                ? await WindowsRawThermalPrinter.printPdf(
+                    destination,
+                    bytes,
+                    format: format,
+                    name: name,
                   )
                 : await Printing.directPrintPdf(
                     printer: destination,

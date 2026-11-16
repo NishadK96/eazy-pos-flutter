@@ -100,7 +100,6 @@ class AndroidBluetoothPrinter {
   /// PDF invoice layouts are commonly rendered on a tall page. Sending that
   /// entire white bitmap to a roll printer wastes paper before the cut. Keep a
   /// small physical margin (roughly 4 mm at 203 DPI) after the content instead.
-  @visibleForTesting
   static img.Image trimTrailingWhitespace(img.Image bitmap) {
     var lastInkRow = -1;
     for (var y = bitmap.height - 1; y >= 0 && lastInkRow < 0; y--) {
@@ -132,7 +131,6 @@ class AndroidBluetoothPrinter {
   /// small bold text print noticeably lighter than the PDF preview. Resolve
   /// them here with a thermal-friendly cutoff so every transmitted ink pixel
   /// is an unambiguous, full-density black dot.
-  @visibleForTesting
   static img.Image strengthenThermalBitmap(img.Image bitmap) {
     final output = img.Image(
       width: bitmap.width,
@@ -151,7 +149,6 @@ class AndroidBluetoothPrinter {
   }
 
   /// GS v 0 raster blocks, capped so portable printers need little buffer.
-  @visibleForTesting
   static Uint8List rasterCommands(img.Image bitmap) {
     final bytesPerRow = (bitmap.width + 7) ~/ 8;
     final output = BytesBuilder(copy: false);

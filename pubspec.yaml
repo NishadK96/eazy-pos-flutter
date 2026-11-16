@@ -49,6 +49,8 @@ dependencies:
   barcode: ^2.2.9
   printing: ^5.14.2
   image: ^4.8.0
+  ffi: ^2.1.4
+  win32: ^5.15.0
   flutter_svg: ^2.2.3
   package_info_plus: ^8.3.1
 
