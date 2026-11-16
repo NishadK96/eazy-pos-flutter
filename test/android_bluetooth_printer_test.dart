@@ -52,4 +52,20 @@ void main() {
     blank.setPixelRgb(0, 19, 0, 0, 0);
     expect(AndroidBluetoothPrinter.trimTrailingWhitespace(blank).height, 20);
   });
+
+  test('strengthens anti-aliased receipt edges into solid thermal dots', () {
+    final image = img.Image(width: 4, height: 1, numChannels: 4);
+    image.setPixelRgba(0, 0, 0, 0, 0, 0);
+    image.setPixelRgba(1, 0, 25, 25, 25, 255);
+    image.setPixelRgba(2, 0, 180, 180, 180, 255);
+    image.setPixelRgba(3, 0, 235, 235, 235, 255);
+
+    final output = AndroidBluetoothPrinter.strengthenThermalBitmap(image);
+
+    expect(output.getPixel(0, 0).r, 255);
+    expect(output.getPixel(1, 0).r, 0);
+    expect(output.getPixel(2, 0).r, 0);
+    expect(output.getPixel(3, 0).r, 255);
+    expect(output.getPixel(2, 0).a, 255);
+  });
 }

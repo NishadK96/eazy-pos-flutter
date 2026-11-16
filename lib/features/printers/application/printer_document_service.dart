@@ -20,6 +20,11 @@ class _PrintableDocument {
 }
 
 class PrinterDocumentService {
+  // Thermal paper needs a deliberately stronger cutoff than a screen preview.
+  // Keeping the cutoff in one place also prevents small Arabic strokes and
+  // anti-aliased Latin glyph edges from disappearing on low-cost 203-DPI heads.
+  static const double _thermalBlackCutoff = 0.76;
+
   static Future<bool> previewPdfBytes(
     Uint8List bytes, {
     required String name,
@@ -223,7 +228,9 @@ class PrinterDocumentService {
       final isPaper = pixel.aNormalized < 0.5;
       // Retain enough anti-aliased edge pixels for thin ERP invoice glyphs
       // without making counters and close columns bleed together.
-      final value = isPaper || pixel.luminanceNormalized >= 0.66 ? 255 : 0;
+      final value = isPaper || pixel.luminanceNormalized >= _thermalBlackCutoff
+          ? 255
+          : 0;
       pixel.setRgba(value, value, value, 255);
     }
     return Uint8List.fromList(img.encodePng(decoded, level: 9));

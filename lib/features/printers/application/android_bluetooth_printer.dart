@@ -72,13 +72,14 @@ class AndroidBluetoothPrinter {
           'Could not render the receipt for Bluetooth printing.',
         );
       final cropped = trimTrailingWhitespace(png);
-      final bitmap = cropped.width == width
+      final sized = cropped.width == width
           ? cropped
           : img.copyResize(
               cropped,
               width: width,
-              interpolation: img.Interpolation.average,
+              interpolation: img.Interpolation.linear,
             );
+      final bitmap = strengthenThermalBitmap(sized);
       output.add(rasterCommands(bitmap));
       pages++;
     }
@@ -122,6 +123,31 @@ class AndroidBluetoothPrinter {
       width: bitmap.width,
       height: croppedHeight,
     );
+  }
+
+  /// Converts the resized receipt into printer-native black and white dots.
+  ///
+  /// Resizing a PDF raster introduces grey edge pixels. If those pixels are
+  /// left for the printer's firmware to interpret, fine Arabic strokes and
+  /// small bold text print noticeably lighter than the PDF preview. Resolve
+  /// them here with a thermal-friendly cutoff so every transmitted ink pixel
+  /// is an unambiguous, full-density black dot.
+  @visibleForTesting
+  static img.Image strengthenThermalBitmap(img.Image bitmap) {
+    final output = img.Image(
+      width: bitmap.width,
+      height: bitmap.height,
+      numChannels: 4,
+    );
+    for (var y = 0; y < bitmap.height; y++) {
+      for (var x = 0; x < bitmap.width; x++) {
+        final pixel = bitmap.getPixel(x, y);
+        final isPaper = pixel.aNormalized < 0.5;
+        final value = isPaper || pixel.luminanceNormalized >= 0.76 ? 255 : 0;
+        output.setPixelRgba(x, y, value, value, value, 255);
+      }
+    }
+    return output;
   }
 
   /// GS v 0 raster blocks, capped so portable printers need little buffer.
