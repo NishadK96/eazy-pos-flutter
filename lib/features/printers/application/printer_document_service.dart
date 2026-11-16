@@ -57,7 +57,17 @@ class PrinterDocumentService {
         printer.url: printer,
     }.values.toList(growable: false);
     if (destinations.isNotEmpty) {
-      final thermalDocument = fitThermalPrintableWidth && _isThermal(format)
+      final useWindowsRawThermal =
+          fitThermalPrintableWidth &&
+          _isThermal(format) &&
+          WindowsRawThermalPrinter.supported;
+      // The Windows RAW path rasterizes the authoritative PDF directly at the
+      // printer's native 203 DPI. Building the legacy fitted PDF first would
+      // rasterize the same receipt twice and delay printing after checkout.
+      final thermalDocument =
+          fitThermalPrintableWidth &&
+              _isThermal(format) &&
+              !useWindowsRawThermal
           ? await _fitThermalPrintableWidth(bytes, format)
           : null;
       final printableBytes = thermalDocument?.bytes ?? bytes;
@@ -71,7 +81,7 @@ class PrinterDocumentService {
                     printableBytes,
                     format: printableFormat,
                   )
-                : fitThermalPrintableWidth && WindowsRawThermalPrinter.supported
+                : useWindowsRawThermal
                 ? await WindowsRawThermalPrinter.printPdf(
                     destination,
                     bytes,
