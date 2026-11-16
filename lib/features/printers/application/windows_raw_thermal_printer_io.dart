@@ -38,14 +38,9 @@ class WindowsRawThermalPrinter {
         throw StateError('Could not render the thermal receipt.');
       }
       final cropped = AndroidBluetoothPrinter.trimTrailingWhitespace(decoded);
-      final sized = cropped.width == width
-          ? cropped
-          : img.copyResize(
-              cropped,
-              width: width,
-              interpolation: img.Interpolation.linear,
-            );
-      final bitmap = AndroidBluetoothPrinter.strengthenThermalBitmap(sized);
+      final bitmap = AndroidBluetoothPrinter.strengthenThermalBitmap(
+        AndroidBluetoothPrinter.fitToThermalCanvas(cropped, width),
+      );
       output.add(AndroidBluetoothPrinter.rasterCommands(bitmap));
       pages++;
     }

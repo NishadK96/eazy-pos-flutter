@@ -72,14 +72,9 @@ class AndroidBluetoothPrinter {
           'Could not render the receipt for Bluetooth printing.',
         );
       final cropped = trimTrailingWhitespace(png);
-      final sized = cropped.width == width
-          ? cropped
-          : img.copyResize(
-              cropped,
-              width: width,
-              interpolation: img.Interpolation.linear,
-            );
-      final bitmap = strengthenThermalBitmap(sized);
+      final bitmap = strengthenThermalBitmap(
+        fitToThermalCanvas(cropped, width),
+      );
       output.add(rasterCommands(bitmap));
       pages++;
     }
@@ -124,7 +119,73 @@ class AndroidBluetoothPrinter {
     );
   }
 
-  /// Converts the resized receipt into printer-native black and white dots.
+  /// Fits a PDF raster to the printer without shrinking its text by default.
+  ///
+  /// An 80 mm PDF raster is about 639 dots wide at 203 DPI, while a common
+  /// 80 mm thermal mechanism exposes 576 printable dots. The PDF normally has
+  /// enough blank side margin to account for that difference. Remove only the
+  /// blank margin and center the native-size content on the printer canvas.
+  /// Resize only when the measured inked content itself is wider than the
+  /// mechanism, preventing clipping for genuinely full-width templates.
+  static img.Image fitToThermalCanvas(img.Image bitmap, int targetWidth) {
+    var firstInkColumn = bitmap.width;
+    var lastInkColumn = -1;
+    for (var x = 0; x < bitmap.width; x++) {
+      for (var y = 0; y < bitmap.height; y++) {
+        final pixel = bitmap.getPixel(x, y);
+        if (pixel.aNormalized >= 0.5 && pixel.luminanceNormalized < 0.96) {
+          firstInkColumn = firstInkColumn < x ? firstInkColumn : x;
+          lastInkColumn = x;
+          break;
+        }
+      }
+    }
+
+    if (lastInkColumn < 0) {
+      return img.Image(width: targetWidth, height: bitmap.height)
+        ..clear(img.ColorRgb8(255, 255, 255));
+    }
+
+    // Preserve roughly 1 mm of the PDF's original blank margin on each side.
+    const retainedMarginDots = 8;
+    final cropLeft = (firstInkColumn - retainedMarginDots).clamp(
+      0,
+      bitmap.width - 1,
+    );
+    final cropRight = (lastInkColumn + retainedMarginDots).clamp(
+      cropLeft,
+      bitmap.width - 1,
+    );
+    final content = img.copyCrop(
+      bitmap,
+      x: cropLeft,
+      y: 0,
+      width: cropRight - cropLeft + 1,
+      height: bitmap.height,
+    );
+
+    if (content.width > targetWidth) {
+      return img.copyResize(
+        content,
+        width: targetWidth,
+        interpolation: img.Interpolation.linear,
+      );
+    }
+    if (content.width == targetWidth) return content;
+
+    final canvas = img.Image(
+      width: targetWidth,
+      height: content.height,
+      numChannels: 4,
+    )..clear(img.ColorRgba8(255, 255, 255, 255));
+    return img.compositeImage(
+      canvas,
+      content,
+      dstX: (targetWidth - content.width) ~/ 2,
+    );
+  }
+
+  /// Converts the fitted receipt into printer-native black and white dots.
   ///
   /// Resizing a PDF raster introduces grey edge pixels. If those pixels are
   /// left for the printer's firmware to interpret, fine Arabic strokes and

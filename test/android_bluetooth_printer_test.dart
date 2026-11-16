@@ -68,4 +68,38 @@ void main() {
     expect(output.getPixel(3, 0).r, 255);
     expect(output.getPixel(2, 0).a, 255);
   });
+
+  test('removes blank side margins without shrinking receipt content', () {
+    final image = img.Image(width: 640, height: 3);
+    img.fill(image, color: img.ColorRgb8(255, 255, 255));
+    image.setPixelRgb(50, 1, 0, 0, 0);
+    image.setPixelRgb(549, 1, 0, 0, 0);
+
+    final output = AndroidBluetoothPrinter.fitToThermalCanvas(image, 576);
+    final inkColumns = <int>[
+      for (var x = 0; x < output.width; x++)
+        if (output.getPixel(x, 1).luminanceNormalized < 0.5) x,
+    ];
+
+    expect(output.width, 576);
+    expect(inkColumns, hasLength(2));
+    expect(
+      inkColumns.last - inkColumns.first,
+      499,
+      reason: 'native 203-DPI text spacing must not be rescaled',
+    );
+    expect(inkColumns.first + inkColumns.last, 575);
+  });
+
+  test('scales only genuinely over-wide receipt content', () {
+    final image = img.Image(width: 640, height: 1);
+    img.fill(image, color: img.ColorRgb8(0, 0, 0));
+
+    final output = AndroidBluetoothPrinter.fitToThermalCanvas(image, 576);
+
+    expect(output.width, 576);
+    expect(output.height, 1);
+    expect(output.getPixel(0, 0).luminanceNormalized, 0);
+    expect(output.getPixel(575, 0).luminanceNormalized, 0);
+  });
 }
