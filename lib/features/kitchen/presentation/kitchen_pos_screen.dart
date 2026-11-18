@@ -290,10 +290,10 @@ class _KitchenPosScreenState extends ConsumerState<KitchenPosScreen> {
     if (resetOrder) _resetOrder();
     _show(
       '${status == 'draft'
-          ? 'Draft'
+          ? 'Offline draft'
           : paymentMethod == 'due'
-          ? 'Kitchen order'
-          : 'Paid order'} ${sale.invoiceNo} saved on this device. Sync before it appears in the kitchen; no ticket has printed yet.',
+          ? 'Offline sale'
+          : 'Offline paid sale'} ${sale.invoiceNo} saved successfully on this device. It will sync automatically when the connection returns. No kitchen ticket has printed yet.',
     );
     return sale;
   }
@@ -1636,6 +1636,23 @@ class _KitchenPosScreenState extends ConsumerState<KitchenPosScreen> {
       _show('Refresh customer and business location data before billing.');
       return;
     }
+    if (_offlineSession && _savedTransactionId == null) {
+      setState(() => _sending = true);
+      try {
+        final sale = await _queueOfflineOrder('final', resetOrder: false);
+        if (!mounted) return;
+        if (print) {
+          await _printSavedOrderBill(sale);
+          if (!mounted) return;
+        }
+        _resetOrder();
+      } catch (error) {
+        if (mounted) _show('Unable to create offline sale: $error');
+      } finally {
+        if (mounted) setState(() => _sending = false);
+      }
+      return;
+    }
     setState(() => _sending = true);
     try {
       var transactionId = _savedTransactionId;
@@ -1682,7 +1699,21 @@ class _KitchenPosScreenState extends ConsumerState<KitchenPosScreen> {
             : 'Bill #$transactionId saved as due.',
       );
     } catch (error) {
-      if (mounted) {
+      if (_savedTransactionId == null &&
+          _isConnectionFailure(error) &&
+          ref.read(offlinePosControllerProvider).value?.ready == true) {
+        try {
+          final sale = await _queueOfflineOrder('final', resetOrder: false);
+          if (!mounted) return;
+          if (print) {
+            await _printSavedOrderBill(sale);
+            if (!mounted) return;
+          }
+          _resetOrder();
+        } catch (queueError) {
+          if (mounted) _show('Unable to create offline sale: $queueError');
+        }
+      } else if (mounted) {
         // A rejected bill (for example an inventory validation error) was
         // leaving the idempotency marker set and locking the entire cart.
         // Clear it for deterministic 4xx responses so the cashier can fix the
