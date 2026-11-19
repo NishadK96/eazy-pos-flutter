@@ -126,6 +126,10 @@ abstract final class ApiEndPoints {
   static const voucherContactsUrl = '$vouchersUrl/contacts';
   static const voucherDuesUrl = '$vouchersUrl/dues';
   static const voucherConfigurationUrl = '$vouchersUrl/configuration';
+  static const customerAdvancesUrl =
+      '${Config.baseUrl}/connector/api/accounting/customer-advances';
+  static String customerAdvanceSyncUrl(int id) =>
+      '$customerAdvancesUrl/$id/sync';
   static const cashRegisterUrl =
       '${Config.baseUrl}/connector/api/cash-register';
   static const cashRegisterOpenUrl = '$cashRegisterUrl/open';

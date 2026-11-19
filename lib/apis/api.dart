@@ -13,6 +13,8 @@ import '../features/invoice_layouts/domain/invoice_layout_entities.dart';
 import '../features/kitchen/domain/kitchen_entities.dart';
 import '../features/app_update/domain/app_update_info.dart';
 import '../features/vouchers/domain/voucher_entities.dart';
+import '../features/backend/domain/backend_repository.dart'
+    show CustomerAdvance, CustomerAdvancePage, QuotationAdvanceDraft;
 import 'http_client_factory.dart';
 
 enum LoginFailure { invalidCredentials, network, server }
@@ -2918,6 +2920,12 @@ class Api {
     String? quotationValidityDate,
     String? quotationTerms,
     String? quotationAttention,
+    String? quotationDeliveryDate,
+    String? quotationInvoiceDate,
+    String? vehicleNumber,
+    String? quotationAdvancePayment,
+    QuotationAdvanceDraft? quotationAdvance,
+    CustomerAdvance? customerAdvance,
   }) async {
     final body = {
       'sells': [
@@ -2936,6 +2944,21 @@ class Api {
             'quotation_terms': quotationTerms!.trim(),
           if (quotationAttention?.trim().isNotEmpty == true)
             'quotation_attention': quotationAttention!.trim(),
+          if (quotationDeliveryDate?.trim().isNotEmpty == true)
+            'quotation_delivery_date': quotationDeliveryDate!.trim(),
+          if (quotationInvoiceDate?.trim().isNotEmpty == true)
+            'quotation_invoice_date': quotationInvoiceDate!.trim(),
+          if (vehicleNumber?.trim().isNotEmpty == true)
+            'vehicle_number': vehicleNumber!.trim(),
+          if (quotationAdvancePayment?.trim().isNotEmpty == true)
+            'quotation_advance_payment': quotationAdvancePayment!.trim(),
+          if (quotationAdvance != null)
+            'quotation_advance': quotationAdvance.toJson(),
+          if (customerAdvance != null)
+            'customer_advance': {
+              'id': customerAdvance.id,
+              'amount': customerAdvance.amount,
+            },
           'tax_rate_id': orderTaxId == null || orderTaxId.isEmpty
               ? null
               : int.parse(orderTaxId),
@@ -2999,7 +3022,8 @@ class Api {
           // its payment must be recorded just like a normal POS sale.
           if (!isQuotation &&
               !isCreditSale &&
-              (!isKitchenOrder || paymentMethod != null))
+              (!isKitchenOrder || paymentMethod != null) &&
+              (customerAdvance == null || payments.isNotEmpty))
             'payments': payments.isNotEmpty
                 ? [
                     for (final payment in payments)
@@ -3021,6 +3045,62 @@ class Api {
       sell: Map<String, dynamic>.from(body['sells']!.first),
     );
   }
+
+  Future<CustomerAdvancePage> customerAdvances(
+    String accessToken, {
+    required int contactId,
+    required int locationId,
+    int page = 1,
+    int perPage = 100,
+  }) async {
+    final uri = Uri.parse(ApiEndPoints.customerAdvancesUrl).replace(
+      queryParameters: {
+        'contact_id': '$contactId',
+        'location_id': '$locationId',
+        'page': '$page',
+        'per_page': '${perPage.clamp(1, 100)}',
+      },
+    );
+    final response = await _client
+        .get(uri, headers: _authorizedHeaders(accessToken))
+        .timeout(const Duration(seconds: 20));
+    final payload = _requireObject(response, 'customer advances');
+    final meta = _map(payload['meta']);
+    return CustomerAdvancePage(
+      items: (payload['data'] as List? ?? const [])
+          .whereType<Map>()
+          .map(
+            (item) => _customerAdvanceFromJson(Map<String, dynamic>.from(item)),
+          )
+          .toList(growable: false),
+      page: _number(meta['current_page']).toInt().clamp(1, 1 << 31),
+      lastPage: _number(meta['last_page']).toInt().clamp(1, 1 << 31),
+      total: _number(meta['total']).toInt(),
+    );
+  }
+
+  Future<CustomerAdvance> syncCustomerAdvance(
+    String accessToken,
+    int id,
+  ) async {
+    final response = await _client
+        .post(
+          Uri.parse(ApiEndPoints.customerAdvanceSyncUrl(id)),
+          headers: _authorizedHeaders(accessToken, json: true),
+        )
+        .timeout(const Duration(seconds: 30));
+    final payload = _requireObject(response, 'customer advance sync');
+    return _customerAdvanceFromJson(_map(payload['data']));
+  }
+
+  CustomerAdvance _customerAdvanceFromJson(Map<String, dynamic> json) =>
+      CustomerAdvance(
+        id: _number(json['id']).toInt(),
+        reference: json['reference']?.toString() ?? '',
+        amount: json['amount']?.toString() ?? '0.00',
+        remaining: json['remaining']?.toString() ?? '0.00',
+        zatcaStatus: json['zatca_status']?.toString() ?? '',
+      );
 
   /// Replays a persisted kitchen sale using its original idempotency ID.
   Future<Map<String, dynamic>> createSalePayload({
@@ -4218,6 +4298,10 @@ class Api {
           json['sale_note']?.toString() ??
           '',
       isKitchenOrder: _bool(json['is_kitchen_order']),
+      hasCustomerAdvance:
+          json['customer_advance'] != null ||
+          json['customer_advance_id'] != null ||
+          _bool(json['has_customer_advance']),
     );
   }
 

@@ -1,5 +1,55 @@
 import '../../../shared/models/entities.dart';
 
+class CustomerAdvance {
+  const CustomerAdvance({
+    required this.id,
+    required this.reference,
+    required this.amount,
+    required this.remaining,
+    required this.zatcaStatus,
+  });
+
+  final int id;
+  final String reference, amount, remaining, zatcaStatus;
+
+  int get remainingMinor => ((double.tryParse(remaining) ?? 0) * 100).round();
+}
+
+class CustomerAdvancePage {
+  const CustomerAdvancePage({
+    required this.items,
+    required this.page,
+    required this.lastPage,
+    required this.total,
+  });
+  final List<CustomerAdvance> items;
+  final int page, lastPage, total;
+}
+
+class QuotationAdvanceDraft {
+  const QuotationAdvanceDraft({
+    required this.amount,
+    required this.method,
+    this.accountId,
+    this.category,
+    this.reasonCode,
+    this.reason,
+  });
+  final String amount, method;
+  final int? accountId;
+  final String? category, reasonCode, reason;
+
+  Map<String, Object?> toJson() => {
+    'amount': amount,
+    'method': method,
+    if (accountId != null) 'account_id': accountId,
+    if (category?.trim().isNotEmpty == true) 'category': category!.trim(),
+    if (reasonCode?.trim().isNotEmpty == true)
+      'reason_code': reasonCode!.trim(),
+    if (reason?.trim().isNotEmpty == true) 'reason': reason!.trim(),
+  };
+}
+
 class BackendSnapshot {
   const BackendSnapshot({
     required this.products,
@@ -50,11 +100,13 @@ class CreatedSale {
     required this.invoicePdfUrl,
     required this.idempotentReplay,
     this.kitchenPrintJobsUrl,
+    this.customerAdvance,
   });
 
   final String id, invoiceNo, invoicePdfUrl;
   final bool idempotentReplay;
   final String? kitchenPrintJobsUrl;
+  final CustomerAdvance? customerAdvance;
 }
 
 abstract interface class BackendRepository {
@@ -205,6 +257,25 @@ abstract interface class BackendRepository {
     String? quotationValidityDate,
     String? quotationTerms,
     String? quotationAttention,
+    String? quotationDeliveryDate,
+    String? quotationInvoiceDate,
+    String? vehicleNumber,
+    String? quotationAdvancePayment,
+    QuotationAdvanceDraft? quotationAdvance,
+    CustomerAdvance? customerAdvance,
+  });
+
+  Future<CustomerAdvancePage> customerAdvances({
+    required String accessToken,
+    required int contactId,
+    required int locationId,
+    int page = 1,
+    int perPage = 100,
+  });
+
+  Future<CustomerAdvance> syncCustomerAdvance({
+    required String accessToken,
+    required int id,
   });
 
   Future<String> createSaleReturn({

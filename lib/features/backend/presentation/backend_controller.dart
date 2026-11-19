@@ -10,6 +10,7 @@ import '../../auth/auth_controller.dart';
 import '../../cash_register/presentation/cash_register_controller.dart';
 import '../../store/app_store.dart';
 import '../../offline_pos/presentation/offline_pos_controller.dart';
+import '../../settings/application/pos_operating_mode_controller.dart';
 import '../data/eazyerp_backend_repository.dart';
 import '../domain/backend_repository.dart';
 
@@ -19,7 +20,22 @@ final backendControllerProvider =
 class BackendController extends AsyncNotifier<void> {
   String? _pendingSaleFingerprint;
   String? _pendingClientTransactionId;
+  String? _pendingQuotationFingerprint;
+  String? _pendingQuotationTransactionId;
   int _insightsGeneration = 0;
+
+  void _requireAdvancePermissions() {
+    final access = ref.read(posRoleAccessProvider).asData?.value.access;
+    if (access?.isAdmin == true) return;
+    final permissions = access?.permissions ?? const <String>{};
+    if (!permissions.contains('sell.payments') ||
+        !permissions.contains('accounting.create_receipt_voucher')) {
+      throw const ApiException(
+        'Customer advances require Sell Payments and Receipt Voucher permissions.',
+        statusCode: 403,
+      );
+    }
+  }
 
   @override
   Future<void> build() async {
@@ -338,19 +354,27 @@ class BackendController extends AsyncNotifier<void> {
     String paymentMethod, {
     String? serviceTypeCode,
     List<PaymentAllocation> payments = const [],
+    CustomerAdvance? customerAdvance,
   }) => _checkout(
     paymentMethod,
     serviceTypeCode: serviceTypeCode,
     payments: payments,
     allowTokenRefresh: true,
+    customerAdvance: customerAdvance,
   );
 
   Future<CreatedSale> saveQuotation({
     String? validityDate,
     String? terms,
     String? attention,
+    String? deliveryDate,
+    String? invoiceDate,
+    String? vehicleNumber,
+    String? advancePayment,
+    QuotationAdvanceDraft? advance,
   }) async {
     final state = ref.read(appStoreProvider);
+    if (advance != null) _requireAdvancePermissions();
     if (state.cart.isEmpty ||
         state.customers.isEmpty ||
         state.locations.isEmpty) {
@@ -359,7 +383,31 @@ class BackendController extends AsyncNotifier<void> {
       );
     }
     final token = await _token();
-    return ref
+    final fingerprint = [
+      state.customer?.id ?? state.customers.first.id,
+      state.locations.first.id,
+      for (final line in state.cart)
+        '${line.product.id}:${line.product.variationId}:${line.quantity}:${line.unitPriceIncludingTax}',
+      validityDate,
+      deliveryDate,
+      invoiceDate,
+      attention,
+      terms,
+      vehicleNumber,
+      advancePayment,
+      advance?.amount,
+      advance?.method,
+      advance?.accountId,
+      advance?.category,
+      advance?.reasonCode,
+      advance?.reason,
+    ].join('|');
+    if (_pendingQuotationFingerprint != fingerprint ||
+        _pendingQuotationTransactionId == null) {
+      _pendingQuotationFingerprint = fingerprint;
+      _pendingQuotationTransactionId = _uuidV4();
+    }
+    final created = await ref
         .read(backendRepositoryProvider)
         .createSale(
           accessToken: token,
@@ -370,32 +418,72 @@ class BackendController extends AsyncNotifier<void> {
           paymentMethod: 'cash',
           total: state.cartTotal,
           grossDiscount: state.cartGrossDiscount,
-          clientTransactionId: _uuidV4(),
+          clientTransactionId: _pendingQuotationTransactionId!,
           isQuotation: true,
           quotationValidityDate: validityDate,
           quotationTerms: terms,
           quotationAttention: attention,
+          quotationDeliveryDate: deliveryDate,
+          quotationInvoiceDate: invoiceDate,
+          vehicleNumber: vehicleNumber,
+          quotationAdvancePayment: advancePayment,
+          quotationAdvance: advance,
           orderTaxId: state.orderTaxId,
           grossDiscountType: state.grossDiscountType,
           grossDiscountRate: state.grossDiscountRate,
         );
+    _pendingQuotationFingerprint = null;
+    _pendingQuotationTransactionId = null;
+    return created;
   }
 
   Future<Sale> checkoutSplit(
     List<PaymentAllocation> payments, {
     String? serviceTypeCode,
+    CustomerAdvance? customerAdvance,
   }) => checkout(
     'multiple',
     serviceTypeCode: serviceTypeCode,
     payments: payments,
+    customerAdvance: customerAdvance,
   );
+
+  Future<List<CustomerAdvance>> availableCustomerAdvances() async {
+    _requireAdvancePermissions();
+    final state = ref.read(appStoreProvider);
+    final customer = state.customer ?? state.customers.firstOrNull;
+    if (customer == null || int.tryParse(customer.id) == null) return const [];
+    final register = await ref.read(cashRegisterControllerProvider.future);
+    if (register == null || int.tryParse(register.locationId) == null) {
+      throw const ApiException(
+        'Open a cash register before applying a customer advance.',
+      );
+    }
+    final result = await ref
+        .read(backendRepositoryProvider)
+        .customerAdvances(
+          accessToken: await _token(),
+          contactId: int.parse(customer.id),
+          locationId: int.parse(register.locationId),
+        );
+    return result.items;
+  }
+
+  Future<CustomerAdvance> syncCustomerAdvance(int id) async {
+    _requireAdvancePermissions();
+    return ref
+        .read(backendRepositoryProvider)
+        .syncCustomerAdvance(accessToken: await _token(), id: id);
+  }
 
   Future<Sale> _checkout(
     String paymentMethod, {
     String? serviceTypeCode,
     List<PaymentAllocation> payments = const [],
     required bool allowTokenRefresh,
+    CustomerAdvance? customerAdvance,
   }) async {
+    if (customerAdvance != null) _requireAdvancePermissions();
     final state = ref.read(appStoreProvider);
     if (state.cart.isEmpty ||
         state.customers.isEmpty ||
@@ -418,11 +506,7 @@ class BackendController extends AsyncNotifier<void> {
       final serviceTypeId = await _resolveServiceTypeId(token, serviceTypeCode);
       final fingerprint = _saleFingerprint(
         state,
-        payments.isEmpty
-            ? paymentMethod
-            : payments
-                  .map((payment) => '${payment.method}:${payment.amount}')
-                  .join('|'),
+        '${payments.isEmpty ? paymentMethod : payments.map((payment) => '${payment.method}:${payment.amount}').join('|')}|advance:${customerAdvance?.id ?? ''}:${customerAdvance?.amount ?? ''}',
         register.locationId,
         register.id,
         serviceTypeCode,
@@ -451,6 +535,7 @@ class BackendController extends AsyncNotifier<void> {
             serviceTypeId: serviceTypeId,
             grossDiscountType: state.grossDiscountType,
             grossDiscountRate: state.grossDiscountRate,
+            customerAdvance: customerAdvance,
           );
       _pendingSaleFingerprint = null;
       _pendingClientTransactionId = null;
@@ -462,6 +547,7 @@ class BackendController extends AsyncNotifier<void> {
             serverId: created.id,
             invoiceNo: created.invoiceNo,
             locationId: register.locationId,
+            hasCustomerAdvance: customerAdvance != null,
           );
       return sale;
     } on ApiException catch (error) {
@@ -473,13 +559,16 @@ class BackendController extends AsyncNotifier<void> {
             serviceTypeCode: serviceTypeCode,
             payments: payments,
             allowTokenRefresh: false,
+            customerAdvance: customerAdvance,
           );
         } catch (_) {
+          if (customerAdvance != null) rethrow;
           return await _queueOfflineSale(paymentMethod);
         }
       }
       rethrow;
     } catch (_) {
+      if (customerAdvance != null) rethrow;
       return await _queueOfflineSale(paymentMethod);
     }
   }

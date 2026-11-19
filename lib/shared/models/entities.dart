@@ -769,6 +769,7 @@ class Sale {
     this.saleNote = '',
     this.isKitchenOrder = false,
     this.payments = const [],
+    this.hasCustomerAdvance = false,
   });
   final String localId, invoiceNo;
   final String? serverId;
@@ -785,6 +786,7 @@ class Sale {
   final String serviceTypeId, saleNote;
   final bool isKitchenOrder;
   final List<PaymentAllocation> payments;
+  final bool hasCustomerAdvance;
 
   Sale copyWith({
     String? serverId,
@@ -801,6 +803,7 @@ class Sale {
     String? saleNote,
     bool? isKitchenOrder,
     List<PaymentAllocation>? payments,
+    bool? hasCustomerAdvance,
   }) => Sale(
     localId: localId,
     serverId: serverId ?? this.serverId,
@@ -826,6 +829,7 @@ class Sale {
     saleNote: saleNote ?? this.saleNote,
     isKitchenOrder: isKitchenOrder ?? this.isKitchenOrder,
     payments: payments ?? this.payments,
+    hasCustomerAdvance: hasCustomerAdvance ?? this.hasCustomerAdvance,
   );
 }
 

@@ -36,11 +36,27 @@ final saleReturnsProvider = FutureProvider.autoDispose<List<SaleReturnRecord>>(
 );
 
 Future<String?> showSaleReturnDialog(BuildContext context, Sale sale) =>
-    showDialog<String>(
-      context: context,
-      barrierDismissible: false,
-      builder: (_) => _SaleReturnDialog(sale: sale),
-    );
+    sale.hasCustomerAdvance
+    ? showDialog<String>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('Return unavailable'),
+          content: const Text(
+            'Returns on sales funded by a customer advance are not currently supported.',
+          ),
+          actions: [
+            FilledButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Close'),
+            ),
+          ],
+        ),
+      )
+    : showDialog<String>(
+        context: context,
+        barrierDismissible: false,
+        builder: (_) => _SaleReturnDialog(sale: sale),
+      );
 
 class PagePad extends StatelessWidget {
   const PagePad({super.key, required this.child});

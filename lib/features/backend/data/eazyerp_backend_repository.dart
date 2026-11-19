@@ -386,6 +386,12 @@ class EazyErpBackendRepository implements BackendRepository {
     String? quotationValidityDate,
     String? quotationTerms,
     String? quotationAttention,
+    String? quotationDeliveryDate,
+    String? quotationInvoiceDate,
+    String? vehicleNumber,
+    String? quotationAdvancePayment,
+    QuotationAdvanceDraft? quotationAdvance,
+    CustomerAdvance? customerAdvance,
   }) async {
     final json = await _api.createSale(
       accessToken: accessToken,
@@ -408,7 +414,14 @@ class EazyErpBackendRepository implements BackendRepository {
       quotationValidityDate: quotationValidityDate,
       quotationTerms: quotationTerms,
       quotationAttention: quotationAttention,
+      quotationDeliveryDate: quotationDeliveryDate,
+      quotationInvoiceDate: quotationInvoiceDate,
+      vehicleNumber: vehicleNumber,
+      quotationAdvancePayment: quotationAdvancePayment,
+      quotationAdvance: quotationAdvance,
+      customerAdvance: customerAdvance,
     );
+    final advanceJson = json['customer_advance'];
     return CreatedSale(
       id:
           (json['transaction_id'] ??
@@ -425,8 +438,38 @@ class EazyErpBackendRepository implements BackendRepository {
           json['idempotent_replay'] == true ||
           json['idempotent_replay']?.toString() == '1',
       kitchenPrintJobsUrl: json['kitchen_print_jobs_url']?.toString(),
+      customerAdvance: advanceJson is Map
+          ? CustomerAdvance(
+              id: (advanceJson['id'] as num?)?.toInt() ?? 0,
+              reference: advanceJson['reference']?.toString() ?? '',
+              amount: advanceJson['amount']?.toString() ?? '0.00',
+              remaining: advanceJson['remaining']?.toString() ?? '0.00',
+              zatcaStatus: advanceJson['zatca_status']?.toString() ?? '',
+            )
+          : null,
     );
   }
+
+  @override
+  Future<CustomerAdvancePage> customerAdvances({
+    required String accessToken,
+    required int contactId,
+    required int locationId,
+    int page = 1,
+    int perPage = 100,
+  }) => _api.customerAdvances(
+    accessToken,
+    contactId: contactId,
+    locationId: locationId,
+    page: page,
+    perPage: perPage,
+  );
+
+  @override
+  Future<CustomerAdvance> syncCustomerAdvance({
+    required String accessToken,
+    required int id,
+  }) => _api.syncCustomerAdvance(accessToken, id);
 
   @override
   Future<String> createSaleReturn({

@@ -9,6 +9,7 @@ import 'package:eazy_pos/shared/models/entities.dart';
 import 'package:eazy_pos/features/purchases/domain/purchase_entities.dart';
 import 'package:eazy_pos/features/zatca/domain/zatca_entities.dart';
 import 'package:eazy_pos/features/vouchers/domain/voucher_entities.dart';
+import 'package:eazy_pos/features/backend/domain/backend_repository.dart';
 
 void main() {
   test('customer list keeps Arabic names when name is empty', () async {
@@ -2483,6 +2484,104 @@ void main() {
     ]);
     expect(result.accounts.single.kind, 'cash');
     expect(result.coreAccounts.single.name, 'Cash drawer');
+  });
+
+  test('quotation advance is sent without ordinary payments', () async {
+    late Map<String, dynamic> sale;
+    final api = Api(
+      client: MockClient((request) async {
+        sale = ((jsonDecode(request.body) as Map)['sells'] as List).single;
+        return http.Response(
+          '{"data":[{"transaction_id":9,"invoice_no":"Q-9",'
+          '"customer_advance":{"id":4,"reference":"AR-4",'
+          '"amount":"115.00","remaining":"115.00",'
+          '"zatca_status":"pending"}}]}',
+          201,
+        );
+      }),
+    );
+
+    final result = await api.createSale(
+      accessToken: 'token',
+      locationId: '1',
+      customer: const Customer(id: '2', name: 'Customer'),
+      lines: const [CartLine(product: _product, quantity: 1)],
+      total: 1250,
+      grossDiscount: 0,
+      clientTransactionId: 'stable-quotation-id',
+      isQuotation: true,
+      quotationDeliveryDate: '2026-12-01',
+      vehicleNumber: 'ABC 123',
+      quotationAdvance: const QuotationAdvanceDraft(
+        amount: '115.00',
+        method: 'cash',
+        category: 'S',
+      ),
+    );
+
+    expect(sale['client_transaction_id'], 'stable-quotation-id');
+    expect(sale.containsKey('payments'), isFalse);
+    expect(sale['quotation_advance'], {
+      'amount': '115.00',
+      'method': 'cash',
+      'category': 'S',
+    });
+    expect(result['customer_advance']['reference'], 'AR-4');
+  });
+
+  test('customer advances list preserves balances and pagination', () async {
+    final api = Api(
+      client: MockClient((request) async {
+        expect(request.url.queryParameters['contact_id'], '2');
+        expect(request.url.queryParameters['location_id'], '1');
+        return http.Response(
+          '{"data":[{"id":4,"reference":"AR-4","amount":"115.00",'
+          '"remaining":"57.50","zatca_status":"accepted"}],'
+          '"meta":{"current_page":1,"last_page":1,"total":1}}',
+          200,
+        );
+      }),
+    );
+
+    final page = await api.customerAdvances(
+      'token',
+      contactId: 2,
+      locationId: 1,
+    );
+    expect(page.items.single.remainingMinor, 5750);
+    expect(page.items.single.zatcaStatus, 'accepted');
+  });
+
+  test('sale applies advance and sends only the remaining payment', () async {
+    late Map<String, dynamic> sale;
+    final api = Api(
+      client: MockClient((request) async {
+        sale = ((jsonDecode(request.body) as Map)['sells'] as List).single;
+        return http.Response(
+          '{"data":[{"transaction_id":10,"invoice_no":"INV-10"}]}',
+          201,
+        );
+      }),
+    );
+    await api.createSale(
+      accessToken: 'token',
+      locationId: '1',
+      customer: const Customer(id: '2', name: 'Customer'),
+      lines: const [CartLine(product: _product, quantity: 1)],
+      payments: const [PaymentAllocation(method: 'cash', amount: 675)],
+      total: 1250,
+      grossDiscount: 0,
+      clientTransactionId: 'stable-sale-id',
+      customerAdvance: const CustomerAdvance(
+        id: 4,
+        reference: 'AR-4',
+        amount: '5.75',
+        remaining: '57.50',
+        zatcaStatus: 'accepted',
+      ),
+    );
+    expect(sale['customer_advance'], {'id': 4, 'amount': '5.75'});
+    expect((sale['payments'] as List).single['amount'], 6.75);
   });
 }
 

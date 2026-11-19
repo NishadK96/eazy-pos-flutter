@@ -14,6 +14,7 @@ import '../../shared/widgets/product_card_style_picker.dart';
 import '../../shared/widgets/modifier_selection_dialog.dart';
 import '../../shared/widgets/document_preview_actions.dart';
 import '../backend/presentation/backend_controller.dart';
+import '../backend/domain/backend_repository.dart';
 import '../cash_register/presentation/cash_register_controller.dart';
 import '../home/module_screens.dart' show showSaleReturnDialog;
 import '../invoice_layouts/presentation/invoice_layout_controller.dart';
@@ -2721,6 +2722,12 @@ class _PosScreenState extends ConsumerState<PosScreen> {
             state.cart.isEmpty ? null : _printAndHoldRetailSale,
           ),
           _bottomAction(
+            Icons.request_quote_outlined,
+            'Quotation',
+            '',
+            state.cart.isEmpty ? null : _saveRetailQuotation,
+          ),
+          _bottomAction(
             Icons.history_rounded,
             'Recent Orders',
             'F7',
@@ -2761,6 +2768,56 @@ class _PosScreenState extends ConsumerState<PosScreen> {
       ),
     ),
   );
+
+  Future<void> _saveRetailQuotation() async {
+    try {
+      final created = await const _CurrentOrder()._saveQuotation(context, ref);
+      if (created == null || !mounted) return;
+      ref.read(appStoreProvider.notifier).clearCart();
+      final advance = created.customerAdvance;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            advance == null
+                ? '${context.tr('Quotation saved')} ${created.invoiceNo}'
+                : '${context.tr('Quotation saved')} ${created.invoiceNo} • '
+                      '${advance.reference} • ZATCA ${advance.zatcaStatus}',
+          ),
+          action:
+              advance != null && advance.zatcaStatus.toLowerCase() != 'accepted'
+              ? SnackBarAction(
+                  label: context.tr('Retry ZATCA'),
+                  onPressed: () async {
+                    try {
+                      final synced = await ref
+                          .read(backendControllerProvider.notifier)
+                          .syncCustomerAdvance(advance.id);
+                      if (!mounted) return;
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text(
+                            '${synced.reference} • ZATCA ${synced.zatcaStatus}',
+                          ),
+                        ),
+                      );
+                    } catch (error) {
+                      if (!mounted) return;
+                      ScaffoldMessenger.of(
+                        context,
+                      ).showSnackBar(SnackBar(content: Text('$error')));
+                    }
+                  },
+                )
+              : null,
+        ),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('$error')));
+    }
+  }
 
   Widget _bottomAction(
     IconData icon,
@@ -6330,16 +6387,48 @@ class _CurrentOrder extends ConsumerWidget {
               ? null
               : () async {
                   try {
-                    final created = await ref
-                        .read(backendControllerProvider.notifier)
-                        .saveQuotation();
+                    final created = await _saveQuotation(context, ref);
+                    if (created == null) return;
                     if (!context.mounted) return;
                     ref.read(appStoreProvider.notifier).clearCart();
+                    final advance = created.customerAdvance;
                     ScaffoldMessenger.of(context).showSnackBar(
                       SnackBar(
                         content: Text(
-                          '${context.tr('Quotation saved')} ${created.invoiceNo}',
+                          advance == null
+                              ? '${context.tr('Quotation saved')} ${created.invoiceNo}'
+                              : '${context.tr('Quotation saved')} ${created.invoiceNo} • '
+                                    '${advance.reference} • ZATCA ${advance.zatcaStatus}',
                         ),
+                        action:
+                            advance != null &&
+                                advance.zatcaStatus.toLowerCase() != 'accepted'
+                            ? SnackBarAction(
+                                label: context.tr('Retry ZATCA'),
+                                onPressed: () async {
+                                  try {
+                                    final synced = await ref
+                                        .read(
+                                          backendControllerProvider.notifier,
+                                        )
+                                        .syncCustomerAdvance(advance.id);
+                                    if (!context.mounted) return;
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(
+                                        content: Text(
+                                          '${synced.reference} • ZATCA ${synced.zatcaStatus}',
+                                        ),
+                                      ),
+                                    );
+                                  } catch (error) {
+                                    if (!context.mounted) return;
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(content: Text('$error')),
+                                    );
+                                  }
+                                },
+                              )
+                            : null,
                       ),
                     );
                   } catch (error) {
@@ -7107,6 +7196,430 @@ class _CurrentOrder extends ConsumerWidget {
     );
   }
 
+  Future<CreatedSale?> _saveQuotation(
+    BuildContext context,
+    WidgetRef ref,
+  ) async {
+    final validity = TextEditingController();
+    final delivery = TextEditingController();
+    final invoice = TextEditingController();
+    final attention = TextEditingController();
+    final terms = TextEditingController();
+    final vehicle = TextEditingController();
+    final advanceAmount = TextEditingController();
+    final informationalAdvance = TextEditingController();
+    final advanceAccount = TextEditingController();
+    final taxReasonCode = TextEditingController();
+    final taxReason = TextEditingController();
+    String advanceMethod = 'cash';
+    String? taxCategory;
+    final values = await showDialog<Map<String, String>>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: Text(context.tr('Save quotation')),
+          content: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 520),
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  TextField(
+                    controller: advanceAmount,
+                    keyboardType: const TextInputType.numberWithOptions(
+                      decimal: true,
+                    ),
+                    decoration: InputDecoration(
+                      labelText: context.tr('Advance received'),
+                      helperText: context.tr(
+                        'Leave blank if no money was received.',
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  DropdownButtonFormField<String>(
+                    initialValue: advanceMethod,
+                    decoration: InputDecoration(
+                      labelText: context.tr('Advance method'),
+                    ),
+                    items: const [
+                      DropdownMenuItem(value: 'cash', child: Text('Cash')),
+                      DropdownMenuItem(
+                        value: 'bank_transfer',
+                        child: Text('Bank transfer'),
+                      ),
+                      DropdownMenuItem(value: 'card', child: Text('Card')),
+                      DropdownMenuItem(value: 'cheque', child: Text('Cheque')),
+                    ],
+                    onChanged: (value) =>
+                        setDialogState(() => advanceMethod = value ?? 'cash'),
+                  ),
+                  if (advanceMethod != 'cash') ...[
+                    const SizedBox(height: 10),
+                    TextField(
+                      controller: advanceAccount,
+                      keyboardType: TextInputType.number,
+                      decoration: InputDecoration(
+                        labelText: context.tr('Payment account ID'),
+                        helperText: context.tr(
+                          'Required for non-cash advances.',
+                        ),
+                      ),
+                    ),
+                  ],
+                  const SizedBox(height: 10),
+                  DropdownButtonFormField<String?>(
+                    initialValue: taxCategory,
+                    decoration: InputDecoration(
+                      labelText: context.tr('Advance tax category'),
+                    ),
+                    items: const [
+                      DropdownMenuItem<String?>(
+                        value: null,
+                        child: Text('Automatic'),
+                      ),
+                      DropdownMenuItem(value: 'S', child: Text('S — Standard')),
+                      DropdownMenuItem(
+                        value: 'Z',
+                        child: Text('Z — Zero rated'),
+                      ),
+                      DropdownMenuItem(value: 'E', child: Text('E — Exempt')),
+                      DropdownMenuItem(
+                        value: 'O',
+                        child: Text('O — Outside scope'),
+                      ),
+                    ],
+                    onChanged: (value) =>
+                        setDialogState(() => taxCategory = value),
+                  ),
+                  const SizedBox(height: 10),
+                  TextField(
+                    controller: taxReasonCode,
+                    decoration: InputDecoration(
+                      labelText: context.tr('Tax reason code'),
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  TextField(
+                    controller: taxReason,
+                    decoration: InputDecoration(
+                      labelText: context.tr('Tax reason'),
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  for (final field in [
+                    (validity, 'Validity date (YYYY-MM-DD)'),
+                    (delivery, 'Delivery date (YYYY-MM-DD)'),
+                    (invoice, 'Invoice date (YYYY-MM-DD)'),
+                    (attention, 'Attention'),
+                    (vehicle, 'Vehicle number'),
+                    (informationalAdvance, 'Informational advance amount'),
+                  ]) ...[
+                    TextField(
+                      controller: field.$1,
+                      decoration: InputDecoration(
+                        labelText: context.tr(field.$2),
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                  ],
+                  TextField(
+                    controller: terms,
+                    maxLines: 4,
+                    maxLength: 20000,
+                    decoration: InputDecoration(
+                      labelText: context.tr('Quotation terms'),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: Text(context.tr('Cancel')),
+            ),
+            FilledButton(
+              onPressed: () {
+                final advance = double.tryParse(advanceAmount.text.trim());
+                bool invalidDate(TextEditingController controller) {
+                  final value = controller.text.trim();
+                  return value.isNotEmpty &&
+                      (!RegExp(r'^\d{4}-\d{2}-\d{2}$').hasMatch(value) ||
+                          DateTime.tryParse(value) == null);
+                }
+
+                if ([validity, delivery, invoice].any(invalidDate)) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text(
+                        context.tr('Enter quotation dates as YYYY-MM-DD.'),
+                      ),
+                    ),
+                  );
+                  return;
+                }
+                if (attention.text.trim().length > 255 ||
+                    vehicle.text.trim().length > 100) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text(
+                        context.tr('Attention or vehicle number is too long.'),
+                      ),
+                    ),
+                  );
+                  return;
+                }
+                if (advanceAmount.text.trim().isNotEmpty &&
+                    (advance == null || advance <= 0)) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text(
+                        context.tr('Enter a valid advance amount.'),
+                      ),
+                    ),
+                  );
+                  return;
+                }
+                if (advanceAmount.text.trim().isNotEmpty &&
+                    advanceMethod != 'cash' &&
+                    int.tryParse(advanceAccount.text.trim()) == null) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text(
+                        context.tr(
+                          'Choose a valid payment account for the advance.',
+                        ),
+                      ),
+                    ),
+                  );
+                  return;
+                }
+                Navigator.pop(dialogContext, {
+                  'validity': validity.text.trim(),
+                  'delivery': delivery.text.trim(),
+                  'invoice': invoice.text.trim(),
+                  'attention': attention.text.trim(),
+                  'terms': terms.text.trim(),
+                  'vehicle': vehicle.text.trim(),
+                  'advancePayment': informationalAdvance.text.trim(),
+                  'advanceAmount': advanceAmount.text.trim(),
+                  'advanceMethod': advanceMethod,
+                  'advanceAccount': advanceAccount.text.trim(),
+                  'taxCategory': taxCategory ?? '',
+                  'taxReasonCode': taxReasonCode.text.trim(),
+                  'taxReason': taxReason.text.trim(),
+                });
+              },
+              child: Text(context.tr('Save quotation')),
+            ),
+          ],
+        ),
+      ),
+    );
+    for (final controller in [
+      validity,
+      delivery,
+      invoice,
+      attention,
+      terms,
+      vehicle,
+      advanceAmount,
+      informationalAdvance,
+      advanceAccount,
+      taxReasonCode,
+      taxReason,
+    ]) {
+      controller.dispose();
+    }
+    if (values == null) return null;
+    return ref
+        .read(backendControllerProvider.notifier)
+        .saveQuotation(
+          validityDate: values['validity'],
+          deliveryDate: values['delivery'],
+          invoiceDate: values['invoice'],
+          attention: values['attention'],
+          terms: values['terms'],
+          vehicleNumber: values['vehicle'],
+          advancePayment: values['advancePayment'],
+          advance: values['advanceAmount']!.isEmpty
+              ? null
+              : QuotationAdvanceDraft(
+                  amount: values['advanceAmount']!,
+                  method: values['advanceMethod']!,
+                  accountId: int.tryParse(values['advanceAccount'] ?? ''),
+                  category: values['taxCategory'],
+                  reasonCode: values['taxReasonCode'],
+                  reason: values['taxReason'],
+                ),
+        );
+  }
+
+  Future<void> _applyCustomerAdvance(
+    BuildContext sheetContext,
+    WidgetRef ref,
+    AppState state,
+    List<PaymentOption> paymentOptions,
+    GoRouter router,
+    ScaffoldMessengerState messenger,
+    ValueChanged<bool> submitting,
+  ) async {
+    submitting(true);
+    try {
+      final advances = await ref
+          .read(backendControllerProvider.notifier)
+          .availableCustomerAdvances();
+      if (!sheetContext.mounted) return;
+      submitting(false);
+      if (advances.isEmpty) {
+        messenger.showSnackBar(
+          const SnackBar(content: Text('No available customer advances.')),
+        );
+        return;
+      }
+      CustomerAdvance selected = advances.first;
+      final amount = TextEditingController(
+        text: (selected.remainingMinor.clamp(0, state.cartTotal) / 100)
+            .toStringAsFixed(2),
+      );
+      String remainderMethod =
+          paymentOptions
+              .where((item) => item.code != 'credit')
+              .firstOrNull
+              ?.code ??
+          'cash';
+      final application = await showDialog<(CustomerAdvance, int, String)>(
+        context: sheetContext,
+        builder: (dialogContext) => StatefulBuilder(
+          builder: (context, setDialogState) => AlertDialog(
+            title: Text(context.tr('Use customer advance')),
+            content: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 460),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  DropdownButtonFormField<CustomerAdvance>(
+                    initialValue: selected,
+                    decoration: InputDecoration(
+                      labelText: context.tr('Available advance'),
+                    ),
+                    items: [
+                      for (final item in advances)
+                        DropdownMenuItem(
+                          value: item,
+                          child: Text('${item.reference} • ${item.remaining}'),
+                        ),
+                    ],
+                    onChanged: (value) {
+                      if (value == null) return;
+                      setDialogState(() {
+                        selected = value;
+                        amount.text =
+                            (value.remainingMinor.clamp(0, state.cartTotal) /
+                                    100)
+                                .toStringAsFixed(2);
+                      });
+                    },
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: amount,
+                    keyboardType: const TextInputType.numberWithOptions(
+                      decimal: true,
+                    ),
+                    decoration: InputDecoration(
+                      labelText: context.tr('Amount to apply'),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  DropdownButtonFormField<String>(
+                    initialValue: remainderMethod,
+                    decoration: InputDecoration(
+                      labelText: context.tr('Remaining payment method'),
+                    ),
+                    items: [
+                      for (final option in paymentOptions.where(
+                        (item) => item.code != 'credit',
+                      ))
+                        DropdownMenuItem(
+                          value: option.code,
+                          child: Text(context.tr(option.label)),
+                        ),
+                    ],
+                    onChanged: (value) => setDialogState(
+                      () => remainderMethod = value ?? remainderMethod,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(dialogContext),
+                child: Text(context.tr('Cancel')),
+              ),
+              FilledButton(
+                onPressed: () {
+                  final minor =
+                      ((double.tryParse(amount.text.trim()) ?? 0) * 100)
+                          .round();
+                  if (minor <= 0 ||
+                      minor > selected.remainingMinor ||
+                      minor > state.cartTotal) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text(
+                          context.tr(
+                            'Advance amount exceeds the available balance or sale total.',
+                          ),
+                        ),
+                      ),
+                    );
+                    return;
+                  }
+                  Navigator.pop(dialogContext, (
+                    selected,
+                    minor,
+                    remainderMethod,
+                  ));
+                },
+                child: Text(context.tr('Apply and complete sale')),
+              ),
+            ],
+          ),
+        ),
+      );
+      amount.dispose();
+      if (application == null || !sheetContext.mounted) return;
+      final applied = CustomerAdvance(
+        id: application.$1.id,
+        reference: application.$1.reference,
+        amount: (application.$2 / 100).toStringAsFixed(2),
+        remaining: application.$1.remaining,
+        zatcaStatus: application.$1.zatcaStatus,
+      );
+      final remainder = state.cartTotal - application.$2;
+      await _submitSplitPayment(
+        sheetContext,
+        ref,
+        remainder == 0
+            ? const []
+            : [PaymentAllocation(method: application.$3, amount: remainder)],
+        router,
+        messenger,
+        submitting,
+        customerAdvance: applied,
+      );
+    } catch (error) {
+      submitting(false);
+      messenger.showSnackBar(
+        SnackBar(content: Text('Unable to load customer advances: $error')),
+      );
+    }
+  }
+
   void _payment(
     BuildContext context,
     WidgetRef ref,
@@ -7253,6 +7766,26 @@ class _CurrentOrder extends ConsumerWidget {
                           },
                           icon: const Icon(Icons.call_split_rounded),
                           label: Text(context.tr('Split payment')),
+                        ),
+                      ),
+                    ),
+                  if (!submitting)
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(22, 0, 22, 18),
+                      child: SizedBox(
+                        width: double.infinity,
+                        child: OutlinedButton.icon(
+                          onPressed: () => _applyCustomerAdvance(
+                            sheetContext,
+                            ref,
+                            state,
+                            paymentOptions,
+                            router,
+                            messenger,
+                            (value) => setSheetState(() => submitting = value),
+                          ),
+                          icon: const Icon(Icons.savings_outlined),
+                          label: Text(context.tr('Use customer advance')),
                         ),
                       ),
                     ),
@@ -7411,8 +7944,9 @@ class _CurrentOrder extends ConsumerWidget {
     List<PaymentAllocation> payments,
     GoRouter router,
     ScaffoldMessengerState messenger,
-    ValueChanged<bool> submitting,
-  ) async {
+    ValueChanged<bool> submitting, {
+    CustomerAdvance? customerAdvance,
+  }) async {
     submitting(true);
     final isArabic = sheetContext.isArabic;
     final saleFailedLabel = sheetContext.tr('Sale failed');
@@ -7423,6 +7957,7 @@ class _CurrentOrder extends ConsumerWidget {
           .read(backendControllerProvider.notifier)
           .checkoutSplit(
             payments,
+            customerAdvance: customerAdvance,
             serviceTypeCode:
                 availableOrderTypes.any(
                   (option) => option.code == selectedOrderType,

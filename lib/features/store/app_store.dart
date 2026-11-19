@@ -550,6 +550,7 @@ class AppStore extends Notifier<AppState> {
     String? serverId,
     String? invoiceNo,
     String locationId = '',
+    bool hasCustomerAdvance = false,
   }) {
     final now = DateTime.now();
     final customer = state.customer ?? state.customers.first;
@@ -570,6 +571,7 @@ class AppStore extends Notifier<AppState> {
       grossDiscountRate: state.grossDiscountRate,
       syncStatus: serverId == null ? SyncStatus.pending : SyncStatus.synced,
       locationId: locationId,
+      hasCustomerAdvance: hasCustomerAdvance,
     );
     var products = [...state.products];
     for (final line in state.cart) {
