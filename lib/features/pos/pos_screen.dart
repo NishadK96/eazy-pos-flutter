@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart' hide Text;
 import 'package:eazy_pos/shared/widgets/localized_text.dart';
+import 'package:flutter/foundation.dart'
+    show TargetPlatform, defaultTargetPlatform;
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -25,6 +27,13 @@ import '../store/app_store.dart';
 import '../settings/application/payment_method_settings_controller.dart';
 import '../settings/application/order_type_settings_controller.dart';
 import '../zatca/presentation/zatca_controller.dart';
+
+bool get _autofocusDialogSearch => switch (defaultTargetPlatform) {
+  TargetPlatform.windows ||
+  TargetPlatform.macOS ||
+  TargetPlatform.linux => true,
+  _ => false,
+};
 
 final _posPaymentShortcutProvider =
     NotifierProvider.autoDispose<_PaymentShortcutNotifier, String?>(
@@ -444,6 +453,7 @@ class _PosScreenState extends ConsumerState<PosScreen> {
   Future<void> _openRecentSales(BuildContext context, AppState state) async {
     if (_quickActionOpen || !mounted) return;
     _quickActionOpen = true;
+    FocusManager.instance.primaryFocus?.unfocus();
     try {
       await showDialog<void>(
         context: context,
@@ -461,6 +471,7 @@ class _PosScreenState extends ConsumerState<PosScreen> {
   ) async {
     if (_quickActionOpen || !mounted) return;
     _quickActionOpen = true;
+    FocusManager.instance.primaryFocus?.unfocus();
     try {
       await showPosCustomerSelector(context, ref, state);
     } finally {
@@ -1992,6 +2003,7 @@ class _PosScreenState extends ConsumerState<PosScreen> {
   }) async {
     if (_quickActionOpen) return;
     _quickActionOpen = true;
+    FocusManager.instance.primaryFocus?.unfocus();
     try {
       await showDialog<void>(
         context: context,
@@ -3631,7 +3643,7 @@ class _RecentSalesDialogState extends ConsumerState<_RecentSalesDialog> {
                     height: 46,
                     child: TextField(
                       controller: _searchController,
-                      autofocus: true,
+                      autofocus: _autofocusDialogSearch,
                       onChanged: (value) => setState(() => _query = value),
                       decoration: InputDecoration(
                         hintText: context.tr(
@@ -4883,7 +4895,7 @@ class _RetailProductSelectorState extends State<_RetailProductSelector> {
                   Expanded(
                     child: TextField(
                       controller: search,
-                      autofocus: true,
+                      autofocus: _autofocusDialogSearch,
                       onChanged: (_) => setState(() {}),
                       decoration: InputDecoration(
                         hintText: context.tr('Search name, SKU or barcode'),
@@ -8540,24 +8552,27 @@ Future<void> showPosCustomerSelector(
   AppState state, {
   Customer? selectedCustomer,
   ValueChanged<Customer>? onSelected,
-}) => showDialog<void>(
-  context: context,
-  barrierDismissible: true,
-  builder: (_) => _CustomerSelectorDialog(
-    customers: state.customers,
-    selectedCustomer: selectedCustomer ?? state.customer,
-    onSelected: (customer) {
-      if (onSelected != null) {
-        onSelected(customer);
-      } else {
-        ref.read(appStoreProvider.notifier).selectCustomer(customer);
-      }
-    },
-    onCreate: ({required name, required mobile, required email}) => ref
-        .read(backendControllerProvider.notifier)
-        .createCustomer(name: name, mobile: mobile, email: email),
-  ),
-);
+}) async {
+  FocusManager.instance.primaryFocus?.unfocus();
+  await showDialog<void>(
+    context: context,
+    barrierDismissible: true,
+    builder: (_) => _CustomerSelectorDialog(
+      customers: state.customers,
+      selectedCustomer: selectedCustomer ?? state.customer,
+      onSelected: (customer) {
+        if (onSelected != null) {
+          onSelected(customer);
+        } else {
+          ref.read(appStoreProvider.notifier).selectCustomer(customer);
+        }
+      },
+      onCreate: ({required name, required mobile, required email}) => ref
+          .read(backendControllerProvider.notifier)
+          .createCustomer(name: name, mobile: mobile, email: email),
+    ),
+  );
+}
 
 class _CustomerSelectorDialog extends StatefulWidget {
   const _CustomerSelectorDialog({
@@ -8618,7 +8633,8 @@ class _CustomerSelectorDialogState extends State<_CustomerSelectorDialog> {
         _customers
             .where((customer) {
               if (query.isEmpty) return true;
-              return customer.preferredName.toLowerCase().contains(query) ||
+              return customer.name.toLowerCase().contains(query) ||
+                  customer.preferredName.toLowerCase().contains(query) ||
                   customer.businessName.toLowerCase().contains(query) ||
                   customer.phone.toLowerCase().contains(query) ||
                   customer.email.toLowerCase().contains(query);
@@ -8740,7 +8756,7 @@ class _CustomerSelectorDialogState extends State<_CustomerSelectorDialog> {
                 height: 46,
                 child: TextField(
                   controller: _searchController,
-                  autofocus: true,
+                  autofocus: _autofocusDialogSearch,
                   onChanged: (value) => setState(() => _query = value),
                   decoration: InputDecoration(
                     hintText: context.tr(

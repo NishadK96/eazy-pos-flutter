@@ -2761,6 +2761,7 @@ class _CustomersScreenState extends ConsumerState<CustomersScreen> {
     final customers = s.customers
         .where(
           (customer) =>
+              customer.name.toLowerCase().contains(query.toLowerCase()) ||
               customer.preferredName.toLowerCase().contains(
                 query.toLowerCase(),
               ) ||

@@ -3,11 +3,57 @@ import 'package:eazy_pos/features/pos/pos_screen.dart';
 import 'package:eazy_pos/features/store/app_store.dart';
 import 'package:eazy_pos/shared/models/entities.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart'
+    show TargetPlatform, debugDefaultTargetPlatformOverride;
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
+  testWidgets('POS customer selector does not summon keyboard on tablets', (
+    tester,
+  ) async {
+    debugDefaultTargetPlatformOverride = TargetPlatform.android;
+    const state = AppState(
+      products: [],
+      categories: [],
+      customers: [Customer(id: '42', name: 'Customer')],
+      sales: [],
+      purchases: [],
+      inventoryTransactions: [],
+      syncQueue: [],
+      locations: [],
+      paymentOptions: [],
+      stockItems: [],
+      units: [],
+      taxes: [],
+      brands: [],
+    );
+
+    await tester.pumpWidget(
+      ProviderScope(
+        child: MaterialApp(
+          home: Scaffold(
+            body: Consumer(
+              builder: (context, ref, _) => TextButton(
+                onPressed: () => showPosCustomerSelector(context, ref, state),
+                child: const Text('Open customers'),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.text('Open customers'));
+    await tester.pumpAndSettle();
+
+    final search = tester.widget<TextField>(find.byType(TextField).first);
+    debugDefaultTargetPlatformOverride = null;
+    expect(search.autofocus, isFalse);
+    expect(tester.testTextInput.isVisible, isFalse);
+  });
+
   testWidgets('POS selector shows Arabic customer names', (tester) async {
     const customer = Customer(id: '42', name: 'أحمد علي', phone: '0501234567');
     const state = AppState(
@@ -106,6 +152,60 @@ void main() {
       findsNWidgets(2),
     );
     expect(find.byIcon(Icons.check_circle_rounded), findsNothing);
+  });
+
+  testWidgets('POS selector searches a business by its contact name', (
+    tester,
+  ) async {
+    const customer = Customer(
+      id: '42',
+      name: 'JASEEL RUMMANA',
+      businessName: 'اسواق اعمال الرمانه للمواد الغذائية',
+      phone: '0556944806',
+    );
+    const unrelated = Customer(
+      id: '43',
+      name: 'Another contact',
+      businessName: 'Another business',
+    );
+    const state = AppState(
+      products: [],
+      categories: [],
+      customers: [customer, unrelated],
+      sales: [],
+      purchases: [],
+      inventoryTransactions: [],
+      syncQueue: [],
+      locations: [],
+      paymentOptions: [],
+      stockItems: [],
+      units: [],
+      taxes: [],
+      brands: [],
+    );
+
+    await tester.pumpWidget(
+      ProviderScope(
+        child: MaterialApp(
+          home: Scaffold(
+            body: Consumer(
+              builder: (context, ref, _) => TextButton(
+                onPressed: () => showPosCustomerSelector(context, ref, state),
+                child: const Text('Open customers'),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.text('Open customers'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField).first, 'Rummana');
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('JASEEL RUMMANA'), findsOneWidget);
+    expect(find.text('Another business'), findsNothing);
   });
 
   testWidgets('POS selector switches between customers with valid IDs', (
