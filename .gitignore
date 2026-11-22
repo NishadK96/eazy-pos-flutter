@@ -31,6 +31,17 @@ migrate_working_dir/
 .pub-cache/
 .pub/
 /build/
+/dist/
+
+# Code-signing material must never be committed. Public certificates are safe
+# in principle, but keeping all signing inputs outside the repository avoids
+# accidental inclusion of private-key bundles and token configuration.
+*.pfx
+*.p12
+*.pvk
+*.key
+*.cer
+*.crt
 
 # Unused source/intermediate catalog renders (optimized JPG assets are committed).
 /assets/products/*.png

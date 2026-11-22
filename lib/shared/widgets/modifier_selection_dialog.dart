@@ -11,6 +11,7 @@ Future<List<SelectedModifier>?> selectProductModifiers(
   Product product, {
   List<SelectedModifier> initialModifiers = const [],
   String confirmLabel = 'Add to order',
+  bool light = false,
 }) {
   final groups = product.modifierGroups
       .where((group) => group.isActive)
@@ -23,6 +24,7 @@ Future<List<SelectedModifier>?> selectProductModifiers(
       groups: groups,
       initialModifiers: initialModifiers,
       confirmLabel: confirmLabel,
+      light: light,
     ),
   );
 }
@@ -33,12 +35,14 @@ class _ModifierSelectionDialog extends StatefulWidget {
     required this.groups,
     required this.initialModifiers,
     required this.confirmLabel,
+    required this.light,
   });
 
   final Product product;
   final List<ModifierGroup> groups;
   final List<SelectedModifier> initialModifiers;
   final String confirmLabel;
+  final bool light;
 
   @override
   State<_ModifierSelectionDialog> createState() =>
@@ -148,6 +152,44 @@ class _ModifierSelectionDialogState extends State<_ModifierSelectionDialog> {
     return KeyEventResult.ignored;
   }
 
+  Color get _text => widget.light ? AppColors.ink : Colors.white;
+  Color get _surface =>
+      widget.light ? const Color(0xFFFFFFFF) : const Color(0xFF102A31);
+  Color get _chrome =>
+      widget.light ? const Color(0xFFF0F7F5) : const Color(0xFF0C2228);
+  Color get _groupSurface =>
+      widget.light ? const Color(0xFFF8FBFA) : const Color(0xFF17323A);
+  Color get _frame =>
+      widget.light ? const Color(0xFFC2D9D2) : const Color(0xFF2B5960);
+  Color get _chromeBorder =>
+      widget.light ? const Color(0xFFD5E5E0) : const Color(0xFF294950);
+  Color get _border =>
+      widget.light ? const Color(0xFFCFDFDA) : const Color(0xFF31515A);
+  Color get _focusAccent =>
+      widget.light ? const Color(0xFF08745D) : const Color(0xFF39D3B2);
+  Color get _accent =>
+      widget.light ? const Color(0xFF08745D) : const Color(0xFF67E2C5);
+  Color get _muted =>
+      widget.light ? const Color(0xFF506762) : const Color(0xFF9CB1B6);
+  Color get _secondary =>
+      widget.light ? const Color(0xFF38574F) : const Color(0xFFB9C8CB);
+  Color get _hint =>
+      widget.light ? const Color(0xFF506762) : const Color(0xFF82999E);
+  Color get _detail =>
+      widget.light ? const Color(0xFF506762) : const Color(0xFF8FA4A9);
+  Color get _requiredBorder =>
+      widget.light ? const Color(0xFFE4B3B6) : const Color(0xFF8D4B52);
+  Color get _requiredFill =>
+      widget.light ? const Color(0xFFFCEBEC) : const Color(0xFF492C32);
+  Color get _completeFill =>
+      widget.light ? const Color(0xFFDFF3EC) : const Color(0xFF16493F);
+  Color get _requiredText =>
+      widget.light ? const Color(0xFF9A343E) : const Color(0xFFFFA8AE);
+  Color get _selectedFill =>
+      widget.light ? const Color(0xFFDFF3EC) : const Color(0xFF155044);
+  Color get _checkFill =>
+      widget.light ? const Color(0xFF08745D) : const Color(0xFF22B894);
+
   @override
   Widget build(BuildContext context) {
     final screen = MediaQuery.sizeOf(context);
@@ -156,7 +198,7 @@ class _ModifierSelectionDialogState extends State<_ModifierSelectionDialog> {
       autofocus: true,
       onKeyEvent: (_, event) => _onKeyEvent(event),
       child: Dialog(
-        backgroundColor: const Color(0xFF102A31),
+        backgroundColor: _surface,
         surfaceTintColor: Colors.transparent,
         insetPadding: EdgeInsets.symmetric(
           horizontal: compact ? 10 : 32,
@@ -164,7 +206,7 @@ class _ModifierSelectionDialogState extends State<_ModifierSelectionDialog> {
         ),
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(18),
-          side: const BorderSide(color: Color(0xFF2B5960)),
+          side: BorderSide(color: _frame),
         ),
         clipBehavior: Clip.antiAlias,
         child: ConstrainedBox(
@@ -202,9 +244,9 @@ class _ModifierSelectionDialogState extends State<_ModifierSelectionDialog> {
 
   Widget _dialogHeader(bool compact) => Container(
     padding: EdgeInsets.fromLTRB(compact ? 14 : 18, 12, compact ? 6 : 10, 12),
-    decoration: const BoxDecoration(
-      color: Color(0xFF0C2228),
-      border: Border(bottom: BorderSide(color: Color(0xFF294950))),
+    decoration: BoxDecoration(
+      color: _chrome,
+      border: Border(bottom: BorderSide(color: _chromeBorder)),
     ),
     child: Row(
       children: [
@@ -215,11 +257,7 @@ class _ModifierSelectionDialogState extends State<_ModifierSelectionDialog> {
             color: const Color(0xFF18A989).withValues(alpha: .18),
             borderRadius: BorderRadius.circular(10),
           ),
-          child: const Icon(
-            Icons.tune_rounded,
-            color: Color(0xFF39D3B2),
-            size: 20,
-          ),
+          child: Icon(Icons.tune_rounded, color: _focusAccent, size: 20),
         ),
         const SizedBox(width: 11),
         Expanded(
@@ -231,17 +269,17 @@ class _ModifierSelectionDialogState extends State<_ModifierSelectionDialog> {
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(
-                  color: Colors.white,
+                  color: _text,
                   fontSize: compact ? 17 : 19,
                   fontWeight: FontWeight.w800,
                   letterSpacing: -.3,
                 ),
               ),
               const SizedBox(height: 1),
-              const Text(
+              Text(
                 'Choose modifiers',
                 style: TextStyle(
-                  color: Color(0xFF9CB1B6),
+                  color: _muted,
                   fontSize: 12,
                   fontWeight: FontWeight.w500,
                 ),
@@ -253,7 +291,7 @@ class _ModifierSelectionDialogState extends State<_ModifierSelectionDialog> {
           tooltip: 'Close',
           onPressed: () => Navigator.of(context).pop(),
           icon: const Icon(Icons.close_rounded),
-          color: const Color(0xFFB9C8CB),
+          color: _secondary,
           visualDensity: VisualDensity.compact,
         ),
       ],
@@ -262,27 +300,23 @@ class _ModifierSelectionDialogState extends State<_ModifierSelectionDialog> {
 
   Widget _dialogFooter(bool compact) => Container(
     padding: EdgeInsets.fromLTRB(compact ? 12 : 16, 9, compact ? 12 : 16, 11),
-    decoration: const BoxDecoration(
-      color: Color(0xFF0C2228),
-      border: Border(top: BorderSide(color: Color(0xFF294950))),
+    decoration: BoxDecoration(
+      color: _chrome,
+      border: Border(top: BorderSide(color: _chromeBorder)),
     ),
     child: Column(
       children: [
         if (!compact)
-          const Padding(
+          Padding(
             padding: EdgeInsets.only(bottom: 7),
             child: Row(
               children: [
-                Icon(
-                  Icons.keyboard_alt_outlined,
-                  size: 17,
-                  color: Color(0xFF82999E),
-                ),
+                Icon(Icons.keyboard_alt_outlined, size: 17, color: _hint),
                 SizedBox(width: 7),
                 Expanded(
                   child: Text(
                     'Use ↑ / ↓ to move, then Space or Enter to select.',
-                    style: TextStyle(color: Color(0xFF82999E), fontSize: 11),
+                    style: TextStyle(color: _hint, fontSize: 11),
                   ),
                 ),
               ],
@@ -294,7 +328,7 @@ class _ModifierSelectionDialogState extends State<_ModifierSelectionDialog> {
             TextButton(
               onPressed: () => Navigator.of(context).pop(),
               style: TextButton.styleFrom(
-                foregroundColor: const Color(0xFFB9C8CB),
+                foregroundColor: _secondary,
                 minimumSize: const Size(82, 40),
               ),
               child: const Text('Cancel'),
@@ -353,10 +387,8 @@ class _ModifierSelectionDialogState extends State<_ModifierSelectionDialog> {
       width: double.infinity,
       margin: const EdgeInsets.only(bottom: 8),
       decoration: BoxDecoration(
-        color: const Color(0xFF17323A),
-        border: Border.all(
-          color: missing ? const Color(0xFF8D4B52) : const Color(0xFF31515A),
-        ),
+        color: _groupSurface,
+        border: Border.all(color: missing ? _requiredBorder : _border),
         borderRadius: BorderRadius.circular(12),
       ),
       child: Column(
@@ -372,19 +404,16 @@ class _ModifierSelectionDialogState extends State<_ModifierSelectionDialog> {
                     children: [
                       Text(
                         group.name,
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 14,
                           fontWeight: FontWeight.w800,
-                          color: Colors.white,
+                          color: _text,
                         ),
                       ),
                       const SizedBox(height: 1),
                       Text(
                         instruction,
-                        style: const TextStyle(
-                          color: Color(0xFF9CB1B6),
-                          fontSize: 11,
-                        ),
+                        style: TextStyle(color: _muted, fontSize: 11),
                       ),
                     ],
                   ),
@@ -396,17 +425,13 @@ class _ModifierSelectionDialogState extends State<_ModifierSelectionDialog> {
                       vertical: 4,
                     ),
                     decoration: BoxDecoration(
-                      color: missing
-                          ? const Color(0xFF492C32)
-                          : const Color(0xFF16493F),
+                      color: missing ? _requiredFill : _completeFill,
                       borderRadius: BorderRadius.circular(999),
                     ),
                     child: Text(
                       missing ? 'Required' : '${selected.length} selected',
                       style: TextStyle(
-                        color: missing
-                            ? const Color(0xFFFFA8AE)
-                            : const Color(0xFF67E2C5),
+                        color: missing ? _requiredText : _accent,
                         fontSize: 10,
                         fontWeight: FontWeight.w700,
                       ),
@@ -415,15 +440,15 @@ class _ModifierSelectionDialogState extends State<_ModifierSelectionDialog> {
               ],
             ),
           ),
-          const Divider(height: 1, color: Color(0xFF31515A)),
+          Divider(height: 1, color: _border),
           if (available.isEmpty)
-            const Padding(
+            Padding(
               padding: EdgeInsets.all(12),
               child: Align(
                 alignment: Alignment.centerLeft,
                 child: Text(
                   'No options are currently available.',
-                  style: TextStyle(color: Color(0xFF9CB1B6)),
+                  style: TextStyle(color: _muted),
                 ),
               ),
             )
@@ -481,13 +506,9 @@ class _ModifierSelectionDialogState extends State<_ModifierSelectionDialog> {
           constraints: const BoxConstraints(minHeight: 52),
           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
           decoration: BoxDecoration(
-            color: isSelected
-                ? const Color(0xFF155044)
-                : const Color(0xFF102A31),
+            color: isSelected ? _selectedFill : _surface,
             border: Border.all(
-              color: focused || isSelected
-                  ? const Color(0xFF39D3B2)
-                  : const Color(0xFF31515A),
+              color: focused || isSelected ? _focusAccent : _border,
               width: focused ? 2 : 1,
             ),
             borderRadius: BorderRadius.circular(9),
@@ -499,8 +520,8 @@ class _ModifierSelectionDialogState extends State<_ModifierSelectionDialog> {
                 height: 20,
                 child: Checkbox(
                   value: isSelected,
-                  activeColor: const Color(0xFF22B894),
-                  checkColor: Colors.white,
+                  activeColor: _checkFill,
+                  checkColor: _text,
                   side: const BorderSide(color: Color(0xFF6C858B)),
                   onChanged: (value) {
                     setState(() => _focusedOption = optionIndex);
@@ -526,9 +547,7 @@ class _ModifierSelectionDialogState extends State<_ModifierSelectionDialog> {
                         fontWeight: isSelected || focused
                             ? FontWeight.w800
                             : FontWeight.w600,
-                        color: isSelected || focused
-                            ? const Color(0xFF67E2C5)
-                            : Colors.white,
+                        color: isSelected || focused ? _accent : Colors.white,
                       ),
                     ),
                     if (option.subSku.isNotEmpty) ...[
@@ -537,10 +556,7 @@ class _ModifierSelectionDialogState extends State<_ModifierSelectionDialog> {
                         option.subSku,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          color: Color(0xFF8FA4A9),
-                          fontSize: 10,
-                        ),
+                        style: TextStyle(color: _detail, fontSize: 10),
                       ),
                     ],
                   ],
@@ -552,9 +568,7 @@ class _ModifierSelectionDialogState extends State<_ModifierSelectionDialog> {
                     ? 'Included'
                     : '+${money(option.priceAdjustment)}',
                 style: TextStyle(
-                  color: option.priceAdjustment == 0
-                      ? const Color(0xFF8FA4A9)
-                      : const Color(0xFF67E2C5),
+                  color: option.priceAdjustment == 0 ? _detail : _accent,
                   fontSize: 11,
                   fontWeight: FontWeight.w700,
                 ),

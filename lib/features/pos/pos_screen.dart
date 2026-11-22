@@ -7215,132 +7215,359 @@ class _CurrentOrder extends ConsumerWidget {
     String? taxCategory;
     final values = await showDialog<Map<String, String>>(
       context: context,
+      barrierDismissible: false,
       builder: (dialogContext) => StatefulBuilder(
         builder: (context, setDialogState) => AlertDialog(
-          title: Text(context.tr('Save quotation')),
-          content: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 520),
-            child: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  TextField(
-                    controller: advanceAmount,
-                    keyboardType: const TextInputType.numberWithOptions(
-                      decimal: true,
-                    ),
-                    decoration: InputDecoration(
-                      labelText: context.tr('Advance received'),
-                      helperText: context.tr(
-                        'Leave blank if no money was received.',
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 10),
-                  DropdownButtonFormField<String>(
-                    initialValue: advanceMethod,
-                    decoration: InputDecoration(
-                      labelText: context.tr('Advance method'),
-                    ),
-                    items: const [
-                      DropdownMenuItem(value: 'cash', child: Text('Cash')),
-                      DropdownMenuItem(
-                        value: 'bank_transfer',
-                        child: Text('Bank transfer'),
-                      ),
-                      DropdownMenuItem(value: 'card', child: Text('Card')),
-                      DropdownMenuItem(value: 'cheque', child: Text('Cheque')),
-                    ],
-                    onChanged: (value) =>
-                        setDialogState(() => advanceMethod = value ?? 'cash'),
-                  ),
-                  if (advanceMethod != 'cash') ...[
-                    const SizedBox(height: 10),
-                    TextField(
-                      controller: advanceAccount,
-                      keyboardType: TextInputType.number,
-                      decoration: InputDecoration(
-                        labelText: context.tr('Payment account ID'),
-                        helperText: context.tr(
-                          'Required for non-cash advances.',
-                        ),
-                      ),
-                    ),
-                  ],
-                  const SizedBox(height: 10),
-                  DropdownButtonFormField<String?>(
-                    initialValue: taxCategory,
-                    decoration: InputDecoration(
-                      labelText: context.tr('Advance tax category'),
-                    ),
-                    items: const [
-                      DropdownMenuItem<String?>(
-                        value: null,
-                        child: Text('Automatic'),
-                      ),
-                      DropdownMenuItem(value: 'S', child: Text('S — Standard')),
-                      DropdownMenuItem(
-                        value: 'Z',
-                        child: Text('Z — Zero rated'),
-                      ),
-                      DropdownMenuItem(value: 'E', child: Text('E — Exempt')),
-                      DropdownMenuItem(
-                        value: 'O',
-                        child: Text('O — Outside scope'),
-                      ),
-                    ],
-                    onChanged: (value) =>
-                        setDialogState(() => taxCategory = value),
-                  ),
-                  const SizedBox(height: 10),
-                  TextField(
-                    controller: taxReasonCode,
-                    decoration: InputDecoration(
-                      labelText: context.tr('Tax reason code'),
-                    ),
-                  ),
-                  const SizedBox(height: 10),
-                  TextField(
-                    controller: taxReason,
-                    decoration: InputDecoration(
-                      labelText: context.tr('Tax reason'),
-                    ),
-                  ),
-                  const SizedBox(height: 10),
-                  for (final field in [
-                    (validity, 'Validity date (YYYY-MM-DD)'),
-                    (delivery, 'Delivery date (YYYY-MM-DD)'),
-                    (invoice, 'Invoice date (YYYY-MM-DD)'),
-                    (attention, 'Attention'),
-                    (vehicle, 'Vehicle number'),
-                    (informationalAdvance, 'Informational advance amount'),
-                  ]) ...[
-                    TextField(
-                      controller: field.$1,
-                      decoration: InputDecoration(
-                        labelText: context.tr(field.$2),
-                      ),
-                    ),
-                    const SizedBox(height: 10),
-                  ],
-                  TextField(
-                    controller: terms,
-                    maxLines: 4,
-                    maxLength: 20000,
-                    decoration: InputDecoration(
-                      labelText: context.tr('Quotation terms'),
-                    ),
-                  ),
-                ],
+          insetPadding: const EdgeInsets.symmetric(
+            horizontal: 16,
+            vertical: 20,
+          ),
+          titlePadding: const EdgeInsets.fromLTRB(24, 20, 12, 14),
+          contentPadding: const EdgeInsets.fromLTRB(20, 4, 20, 12),
+          actionsPadding: const EdgeInsets.fromLTRB(20, 10, 20, 18),
+          title: Row(
+            children: [
+              Container(
+                width: 44,
+                height: 44,
+                decoration: BoxDecoration(
+                  color: AppColors.primary.withValues(alpha: .1),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: const Icon(
+                  Icons.request_quote_outlined,
+                  color: AppColors.primary,
+                ),
               ),
-            ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      context.tr('Create quotation'),
+                      style: const TextStyle(fontWeight: FontWeight.w900),
+                    ),
+                    Text(
+                      context.tr(
+                        'Add document details and optionally collect an advance.',
+                      ),
+                      style: const TextStyle(
+                        color: AppColors.muted,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w400,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              IconButton(
+                tooltip: context.tr('Close'),
+                onPressed: () => Navigator.pop(dialogContext),
+                icon: const Icon(Icons.close_rounded),
+              ),
+            ],
+          ),
+          content: Builder(
+            builder: (context) {
+              // AlertDialog measures its child intrinsically. LayoutBuilder
+              // cannot provide intrinsic dimensions and caused the modal to
+              // leave only its barrier visible on Flutter web.
+              final contentWidth = (MediaQuery.sizeOf(context).width - 72)
+                  .clamp(280.0, 880.0);
+              final contentHeight = (MediaQuery.sizeOf(context).height - 210)
+                  .clamp(320.0, 560.0);
+              final wide = contentWidth >= 720;
+              final cardWidth = wide ? (contentWidth - 16) / 2 : contentWidth;
+              Widget heading(IconData icon, String title, String subtitle) =>
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 14),
+                    child: Row(
+                      children: [
+                        Icon(icon, size: 20, color: AppColors.primary),
+                        const SizedBox(width: 9),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                context.tr(title),
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w900,
+                                ),
+                              ),
+                              Text(
+                                context.tr(subtitle),
+                                style: const TextStyle(
+                                  color: AppColors.muted,
+                                  fontSize: 11,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  );
+              Widget card(List<Widget> children, {bool highlighted = false}) =>
+                  Container(
+                    width: cardWidth,
+                    padding: const EdgeInsets.all(17),
+                    decoration: BoxDecoration(
+                      color: highlighted
+                          ? const Color(0xFFF0F8F5)
+                          : const Color(0xFFF8FAF9),
+                      border: Border.all(color: const Color(0xFFDCE5E1)),
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: children,
+                    ),
+                  );
+              Widget dateField(
+                TextEditingController controller,
+                String label,
+              ) => TextField(
+                controller: controller,
+                readOnly: true,
+                onTap: () async {
+                  final chosen = await showDatePicker(
+                    context: context,
+                    initialDate:
+                        DateTime.tryParse(controller.text) ?? DateTime.now(),
+                    firstDate: DateTime.now().subtract(
+                      const Duration(days: 365),
+                    ),
+                    lastDate: DateTime.now().add(const Duration(days: 3650)),
+                  );
+                  if (chosen != null) {
+                    controller.text = DateFormat('yyyy-MM-dd').format(chosen);
+                    setDialogState(() {});
+                  }
+                },
+                decoration: InputDecoration(
+                  labelText: context.tr(label),
+                  hintText: 'YYYY-MM-DD',
+                  prefixIcon: const Icon(Icons.calendar_today_outlined),
+                  suffixIcon: controller.text.isEmpty
+                      ? null
+                      : IconButton(
+                          onPressed: () => setDialogState(controller.clear),
+                          icon: const Icon(Icons.close, size: 18),
+                        ),
+                ),
+              );
+              return SizedBox(
+                width: contentWidth,
+                height: contentHeight,
+                child: SingleChildScrollView(
+                  child: Wrap(
+                    spacing: 16,
+                    runSpacing: 16,
+                    crossAxisAlignment: WrapCrossAlignment.start,
+                    children: [
+                      card([
+                        heading(
+                          Icons.description_outlined,
+                          'Quotation details',
+                          'Information displayed on the document.',
+                        ),
+                        TextField(
+                          controller: attention,
+                          maxLength: 255,
+                          decoration: InputDecoration(
+                            labelText: context.tr('Attention'),
+                            hintText: context.tr(
+                              'Contact person or department',
+                            ),
+                            prefixIcon: const Icon(Icons.person_outline),
+                            counterText: '',
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        TextField(
+                          controller: vehicle,
+                          maxLength: 100,
+                          decoration: InputDecoration(
+                            labelText: context.tr('Vehicle number'),
+                            prefixIcon: const Icon(
+                              Icons.local_shipping_outlined,
+                            ),
+                            counterText: '',
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        TextField(
+                          controller: terms,
+                          minLines: 3,
+                          maxLines: 5,
+                          maxLength: 20000,
+                          decoration: InputDecoration(
+                            labelText: context.tr('Terms and notes'),
+                            alignLabelWithHint: true,
+                          ),
+                        ),
+                      ]),
+                      card([
+                        heading(
+                          Icons.event_outlined,
+                          'Important dates',
+                          'Choose only the dates needed.',
+                        ),
+                        dateField(validity, 'Valid until'),
+                        const SizedBox(height: 12),
+                        dateField(delivery, 'Expected delivery'),
+                        const SizedBox(height: 12),
+                        dateField(invoice, 'Expected invoice date'),
+                      ]),
+                      card([
+                        heading(
+                          Icons.payments_outlined,
+                          'Advance payment',
+                          'Leave empty if no money is collected.',
+                        ),
+                        TextField(
+                          controller: advanceAmount,
+                          keyboardType: const TextInputType.numberWithOptions(
+                            decimal: true,
+                          ),
+                          decoration: InputDecoration(
+                            labelText: context.tr('Amount received'),
+                            hintText: '0.00',
+                            prefixIcon: const Icon(
+                              Icons.account_balance_wallet_outlined,
+                            ),
+                            suffixText: 'SAR',
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        DropdownButtonFormField<String>(
+                          initialValue: advanceMethod,
+                          decoration: InputDecoration(
+                            labelText: context.tr('Payment method'),
+                            prefixIcon: const Icon(Icons.credit_card_outlined),
+                          ),
+                          items: const [
+                            DropdownMenuItem(
+                              value: 'cash',
+                              child: Text('Cash'),
+                            ),
+                            DropdownMenuItem(
+                              value: 'bank_transfer',
+                              child: Text('Bank transfer'),
+                            ),
+                            DropdownMenuItem(
+                              value: 'card',
+                              child: Text('Card'),
+                            ),
+                            DropdownMenuItem(
+                              value: 'cheque',
+                              child: Text('Cheque'),
+                            ),
+                          ],
+                          onChanged: (value) => setDialogState(
+                            () => advanceMethod = value ?? 'cash',
+                          ),
+                        ),
+                        if (advanceMethod != 'cash') ...[
+                          const SizedBox(height: 12),
+                          TextField(
+                            controller: advanceAccount,
+                            keyboardType: TextInputType.number,
+                            decoration: InputDecoration(
+                              labelText: context.tr('Payment account ID'),
+                              helperText: context.tr(
+                                'Required for non-cash payments',
+                              ),
+                              prefixIcon: const Icon(
+                                Icons.account_balance_outlined,
+                              ),
+                            ),
+                          ),
+                        ],
+                        const SizedBox(height: 12),
+                        TextField(
+                          controller: informationalAdvance,
+                          keyboardType: const TextInputType.numberWithOptions(
+                            decimal: true,
+                          ),
+                          decoration: InputDecoration(
+                            labelText: context.tr('Requested advance'),
+                            helperText: context.tr(
+                              'Informational only; does not record money',
+                            ),
+                            suffixText: 'SAR',
+                          ),
+                        ),
+                      ], highlighted: true),
+                      card([
+                        heading(
+                          Icons.receipt_long_outlined,
+                          'Advance tax details',
+                          'Use Automatic unless special VAT treatment applies.',
+                        ),
+                        DropdownButtonFormField<String?>(
+                          initialValue: taxCategory,
+                          decoration: InputDecoration(
+                            labelText: context.tr('Tax category'),
+                            prefixIcon: const Icon(Icons.percent_outlined),
+                          ),
+                          items: const [
+                            DropdownMenuItem<String?>(
+                              value: null,
+                              child: Text('Automatic'),
+                            ),
+                            DropdownMenuItem(
+                              value: 'S',
+                              child: Text('S — Standard'),
+                            ),
+                            DropdownMenuItem(
+                              value: 'Z',
+                              child: Text('Z — Zero rated'),
+                            ),
+                            DropdownMenuItem(
+                              value: 'E',
+                              child: Text('E — Exempt'),
+                            ),
+                            DropdownMenuItem(
+                              value: 'O',
+                              child: Text('O — Outside scope'),
+                            ),
+                          ],
+                          onChanged: (value) =>
+                              setDialogState(() => taxCategory = value),
+                        ),
+                        const SizedBox(height: 12),
+                        TextField(
+                          controller: taxReasonCode,
+                          decoration: InputDecoration(
+                            labelText: context.tr('Tax reason code'),
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        TextField(
+                          controller: taxReason,
+                          minLines: 2,
+                          maxLines: 3,
+                          decoration: InputDecoration(
+                            labelText: context.tr('Tax reason'),
+                            alignLabelWithHint: true,
+                          ),
+                        ),
+                      ]),
+                    ],
+                  ),
+                ),
+              );
+            },
           ),
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(dialogContext),
               child: Text(context.tr('Cancel')),
             ),
-            FilledButton(
+            FilledButton.icon(
               onPressed: () {
                 final advance = double.tryParse(advanceAmount.text.trim());
                 bool invalidDate(TextEditingController controller) {
@@ -7412,7 +7639,8 @@ class _CurrentOrder extends ConsumerWidget {
                   'taxReason': taxReason.text.trim(),
                 });
               },
-              child: Text(context.tr('Save quotation')),
+              icon: const Icon(Icons.check_rounded),
+              label: Text(context.tr('Save quotation')),
             ),
           ],
         ),

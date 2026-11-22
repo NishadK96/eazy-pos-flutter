@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:file_picker/file_picker.dart';
@@ -6,6 +7,7 @@ import 'package:flutter/material.dart' hide Text;
 import 'package:eazy_pos/shared/widgets/localized_text.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:http/http.dart' as http;
 
 import '../../../apis/api.dart';
 import '../../../core/theme/app_theme.dart';
@@ -64,18 +66,40 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
     );
     _nameAr = TextEditingController(text: p?.nameAr ?? '');
     _sku = TextEditingController(text: p?.sku ?? '');
-    _purchase = TextEditingController(
-      text: p == null ? '' : (p.purchasePrice / 100).toStringAsFixed(2),
-    );
-    _purchaseInc = TextEditingController(
-      text: p == null ? '' : (p.purchasePrice / 100).toStringAsFixed(2),
-    );
-    _selling = TextEditingController(
-      text: p == null ? '' : (p.sellingPrice / 100).toStringAsFixed(2),
-    );
-    _sellingInc = TextEditingController(
-      text: p == null ? '' : (p.sellingPrice / 100).toStringAsFixed(2),
-    );
+    final details = p?.editDetails;
+    // POS prices include tax; the edit form needs both independent values.
+    final multiplier = p == null ? 1.0 : 1 + p.taxPercent / 100;
+    final purchaseInc = details?.purchasePriceIncTax ?? p?.purchasePrice;
+    final sellingInc = details?.sellingPriceIncTax ?? p?.sellingPrice;
+    final purchase =
+        details?.purchasePrice ??
+        (purchaseInc == null ? null : (purchaseInc / multiplier).round());
+    final selling =
+        details?.sellingPrice ??
+        (sellingInc == null || p?.sellingPriceIncludesTax == false
+            ? sellingInc
+            : (sellingInc / multiplier).round());
+    String priceText(int? cents) =>
+        cents == null ? '' : (cents / 100).toStringAsFixed(2);
+    _purchase = TextEditingController(text: priceText(purchase));
+    _purchaseInc = TextEditingController(text: priceText(purchaseInc));
+    _selling = TextEditingController(text: priceText(selling));
+    _sellingInc = TextEditingController(text: priceText(sellingInc));
+    if (details != null) {
+      _brandId = details.brandId.isEmpty ? null : details.brandId;
+      _subCategoryId = details.subCategoryId.isEmpty
+          ? null
+          : details.subCategoryId;
+      _barcodeType = details.barcodeType;
+      _taxType = details.taxType;
+      _manageStock = details.manageStock;
+      _serialNumber = details.enableSerialNumber;
+      _notForSelling = details.notForSelling;
+      _locationIds.addAll(details.locationIds);
+      _description.text = details.description;
+      _weight.text = details.weight;
+      _preparation.text = details.preparationMinutes?.toString() ?? '';
+    }
     _margin = TextEditingController(text: _initialMargin(p));
     _minimum = TextEditingController(text: '${p?.minimumStock ?? 0}');
     _unitId = p?.unitId.isNotEmpty == true ? p!.unitId : null;
@@ -100,6 +124,9 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
 
   String _initialMargin(Product? product) {
     if (product == null || product.purchasePrice <= 0) return '';
+    if (product.editDetails?.profitPercent != null) {
+      return product.editDetails!.profitPercent!.toStringAsFixed(2);
+    }
     final margin =
         (product.sellingPrice - product.purchasePrice) /
         product.purchasePrice *
@@ -132,8 +159,12 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
   @override
   Widget build(BuildContext context) {
     final state = ref.watch(appStoreProvider);
-    _unitId ??= state.units.isNotEmpty ? state.units.first.id : null;
-    if (_locationIds.isEmpty && state.locations.length == 1) {
+    if (widget.product == null) {
+      _unitId ??= state.units.isNotEmpty ? state.units.first.id : null;
+    }
+    if (widget.product == null &&
+        _locationIds.isEmpty &&
+        state.locations.length == 1) {
       _locationIds.add(state.locations.first.id);
     }
     final editing = widget.product != null;
@@ -1130,7 +1161,7 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
           color: done ? AppColors.primary : AppColors.muted,
         ),
         const SizedBox(width: 9),
-        Text(label),
+        Expanded(child: Text(label)),
       ],
     ),
   );
@@ -1716,7 +1747,7 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
       if (required && (v == null || v.trim().isEmpty))
         return '$label is required';
       if (number && v?.isNotEmpty == true && double.tryParse(v!) == null)
-        return 'Enter a valid number';
+        return '${context.tr(label)}: ${context.tr('Enter a valid number')}';
       return null;
     },
   );
@@ -1740,9 +1771,13 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
     onChanged: changed == null ? null : (_) => changed(),
     validator: (value) {
       final text = value?.trim() ?? '';
-      if (text.isEmpty) return required ? context.tr('Required') : null;
+      if (text.isEmpty) {
+        return required
+            ? '${context.tr(label)}: ${context.tr('Required')}'
+            : null;
+      }
       return double.tryParse(text) == null
-          ? context.tr('Enter a valid number')
+          ? '${context.tr(label)}: ${context.tr('Enter a valid number')}'
           : null;
     },
   );
@@ -1886,7 +1921,9 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
         .map((e) => DropdownMenuItem(value: e.id, child: Text(e.name)))
         .toList(),
     onChanged: changed,
-    validator: required ? (v) => v == null ? '$label is required' : null : null,
+    validator: required
+        ? (v) => v == null ? context.tr('$label is required') : null
+        : null,
   );
 
   Future<void> _showCreateUnitDialog() async {
@@ -1911,9 +1948,11 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
   ) => DropdownButtonFormField<String>(
     initialValue: value,
     decoration: InputDecoration(labelText: context.tr(label)),
-    items: options
-        .map((e) => DropdownMenuItem(value: e.id, child: Text(e.name)))
-        .toList(),
+    items: [
+      if (!options.any((option) => option.id == value))
+        DropdownMenuItem(value: value, child: Text(value)),
+      ...options.map((e) => DropdownMenuItem(value: e.id, child: Text(e.name))),
+    ],
     onChanged: changed,
   );
 
@@ -2074,7 +2113,12 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
   }
 
   Future<void> _save(_SaveMode mode) async {
-    if (!_formKey.currentState!.validate() || _unitId == null) return;
+    if (_saving) return;
+    final invalidFields = _formKey.currentState!.validateGranularly();
+    if (invalidFields.isNotEmpty || _unitId == null) {
+      await _showValidationErrors(invalidFields);
+      return;
+    }
     if (widget.quick &&
         (double.tryParse(_opening.text) ?? 0) > 0 &&
         _locationIds.isEmpty) {
@@ -2086,38 +2130,23 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
       );
       return;
     }
-    final sku = _sku.text.trim();
-    if (sku.isNotEmpty) {
-      try {
+    setState(() => _saving = true);
+    try {
+      final sku = _sku.text.trim();
+      if (sku.isNotEmpty && sku != widget.product?.sku.trim()) {
         final available = await ref
             .read(backendControllerProvider.notifier)
             .checkSku(sku, excludeProductId: widget.product?.id);
+        if (!mounted) return;
         if (!available) {
-          if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text('This SKU is already in use.'),
-                backgroundColor: AppColors.danger,
-              ),
-            );
-          }
+          await _showSaveError(context.tr('This SKU is already in use.'));
           return;
         }
-      } on ApiException catch (error) {
-        if (mounted) {
-          ScaffoldMessenger.of(
-            context,
-          ).showSnackBar(SnackBar(content: Text(error.message)));
-        }
-        return;
       }
-    }
-    if (mode == _SaveMode.openingStock) {
-      final proceed = await _requestOpeningStock();
-      if (!proceed) return;
-    }
-    setState(() => _saving = true);
-    try {
+      if (mode == _SaveMode.openingStock) {
+        final proceed = await _requestOpeningStock();
+        if (!proceed || !mounted) return;
+      }
       final draft = ProductDraft(
         name: _name.text,
         nameEn: _name.text,
@@ -2170,14 +2199,155 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
       } else {
         context.go(widget.returnRoute);
       }
-    } on ApiException catch (e) {
-      if (mounted)
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text(e.message)));
+    } on ApiException catch (error) {
+      if (!mounted) return;
+      await _showSaveError(_saveErrorMessage(error));
+    } on TimeoutException {
+      if (!mounted) return;
+      await _showSaveError(
+        context.tr(
+          'The save request timed out. Check your connection and try again.',
+        ),
+      );
+    } on http.ClientException {
+      if (!mounted) return;
+      await _showSaveError(
+        context.tr('Unable to reach the server. Check your connection.'),
+      );
+    } on Exception {
+      if (!mounted) return;
+      await _showSaveError(
+        context.tr('An unexpected error prevented saving. Please try again.'),
+      );
     } finally {
       if (mounted) setState(() => _saving = false);
     }
+  }
+
+  String _saveErrorMessage(ApiException error) {
+    const labels = {
+      'name': 'Product name',
+      'name_en': 'Product name (English)',
+      'name_ar': 'Product name (Arabic)',
+      'sku': 'SKU',
+      'unit_id': 'Unit',
+      'category_id': 'Category',
+      'sub_category_id': 'Subcategory',
+      'brand_id': 'Brand',
+      'tax': 'Applicable tax',
+      'tax_type': 'Selling price tax type',
+      'barcode_type': 'Barcode type',
+      'product_locations': 'Business locations',
+      'single_dpp': 'Purchase cost excluding tax',
+      'single_dpp_inc_tax': 'Purchase cost including tax',
+      'single_dsp': 'Selling price excluding tax',
+      'single_dsp_inc_tax': 'Selling price including tax',
+      'alert_quantity': 'Low-stock alert',
+      'image': 'Product image',
+      'product_brochure': 'Product brochure',
+    };
+    final messages = <String>{};
+    void collect(String field, dynamic value) {
+      if (value is Map) {
+        for (final entry in value.entries) {
+          collect('$field.${entry.key}', entry.value);
+        }
+      } else if (value is List) {
+        for (final item in value) {
+          collect(field, item);
+        }
+      } else if (value is String && value.trim().isNotEmpty) {
+        final label = labels[field.split('.').first] ?? field;
+        messages.add('${context.tr(label)}: ${value.trim()}');
+      }
+    }
+
+    error.validationErrors.forEach(collect);
+    return messages.isEmpty ? context.tr(error.message) : messages.join('\n\n');
+  }
+
+  Future<void> _showValidationErrors(
+    Set<FormFieldState<Object?>> invalidFields,
+  ) async {
+    final messages = invalidFields
+        .map((field) => field.errorText)
+        .whereType<String>()
+        .toSet();
+    if (_unitId == null) messages.add(context.tr('Unit is required'));
+    FocusScope.of(context).unfocus();
+    final review = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Row(
+          children: [
+            const Icon(Icons.error_outline_rounded, color: AppColors.danger),
+            const SizedBox(width: 10),
+            const Expanded(child: Text('Check product details')),
+          ],
+        ),
+        scrollable: true,
+        content: SizedBox(
+          width: 420,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const Text('Correct these fields before saving your product.'),
+              const SizedBox(height: 16),
+              for (final message in messages)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: AppColors.danger.withValues(alpha: 0.06),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(
+                        color: AppColors.danger.withValues(alpha: 0.18),
+                      ),
+                    ),
+                    child: Text(message),
+                  ),
+                ),
+            ],
+          ),
+        ),
+        actions: [
+          FilledButton.icon(
+            onPressed: () => Navigator.of(context).pop(true),
+            icon: const Icon(Icons.edit_outlined),
+            label: const Text('Review fields'),
+          ),
+        ],
+      ),
+    );
+    if (review == true && mounted && invalidFields.isNotEmpty) {
+      final firstField = invalidFields.first;
+      if (firstField.mounted) {
+        await Scrollable.ensureVisible(
+          firstField.context,
+          alignment: 0.2,
+          duration: const Duration(milliseconds: 250),
+        );
+      }
+    }
+  }
+
+  Future<void> _showSaveError(String message) async {
+    if (!mounted) return;
+    await showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Unable to save product'),
+        scrollable: true,
+        content: SelectableText(message),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Close'),
+          ),
+        ],
+      ),
+    );
   }
 
   Future<bool> _requestOpeningStock() async {

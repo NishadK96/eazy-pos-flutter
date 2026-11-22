@@ -149,14 +149,22 @@ class _KitchenResizeHandle extends StatelessWidget {
   );
 }
 
+enum _KitchenLayout { modern, light, classic }
+
 class _KitchenPosScreenState extends ConsumerState<KitchenPosScreen> {
   static const _border = Color(0xFFDCE5E2);
-  static const _desktopCanvas = Color(0xFF091720);
-  static const _desktopSurface = Color(0xFF10232D);
-  static const _desktopSurfaceRaised = Color(0xFF172C37);
-  static const _desktopBorder = Color(0xFF314752);
-  static const _desktopTextMuted = Color(0xFFA8B7BE);
-  static const _desktopAccent = Color(0xFF2BC5A0);
+  Color get _desktopCanvas =>
+      _lightLayout ? const Color(0xFFEDF4F2) : const Color(0xFF091720);
+  Color get _desktopSurface =>
+      _lightLayout ? const Color(0xFFFFFFFF) : const Color(0xFF10232D);
+  Color get _desktopSurfaceRaised =>
+      _lightLayout ? const Color(0xFFF5F9F8) : const Color(0xFF172C37);
+  Color get _desktopBorder =>
+      _lightLayout ? const Color(0xFFCCDCD7) : const Color(0xFF314752);
+  Color get _desktopTextMuted =>
+      _lightLayout ? const Color(0xFF506762) : const Color(0xFFA8B7BE);
+  Color get _desktopAccent =>
+      _lightLayout ? const Color(0xFF08745D) : const Color(0xFF2BC5A0);
   static const _categoryBackgrounds = <Color>[
     Color(0xFFE8F7ED),
     Color(0xFFE9F3FF),
@@ -205,7 +213,10 @@ class _KitchenPosScreenState extends ConsumerState<KitchenPosScreen> {
   String _keypadInput = '';
   String _keypadMode = 'qty';
   bool _showMobileOrder = false;
-  bool _modernLayout = true;
+  _KitchenLayout _layout = _KitchenLayout.modern;
+  bool get _modernLayout => _layout != _KitchenLayout.classic;
+  bool get _lightLayout => _layout == _KitchenLayout.light;
+  Color get _desktopText => _lightLayout ? AppColors.ink : Colors.white;
   bool _sending = false;
   double _classicOrderPanelWidth = 360;
   double _categoryPanelWidth = 148;
@@ -229,15 +240,26 @@ class _KitchenPosScreenState extends ConsumerState<KitchenPosScreen> {
     final preferences = await SharedPreferences.getInstance();
     if (!mounted) return;
     setState(() {
-      _modernLayout = preferences.getBool('kitchen_pos_modern_layout') ?? true;
+      _layout = preferences.getBool('kitchen_pos_light_layout') == true
+          ? _KitchenLayout.light
+          : preferences.getBool('kitchen_pos_modern_layout') == false
+          ? _KitchenLayout.classic
+          : _KitchenLayout.modern;
     });
   }
 
-  Future<void> _selectLayout(bool modern) async {
-    if (_modernLayout == modern) return;
-    setState(() => _modernLayout = modern);
+  Future<void> _selectLayout(_KitchenLayout layout) async {
+    if (_layout == layout) return;
+    setState(() => _layout = layout);
     final preferences = await SharedPreferences.getInstance();
-    await preferences.setBool('kitchen_pos_modern_layout', modern);
+    await preferences.setBool(
+      'kitchen_pos_light_layout',
+      layout == _KitchenLayout.light,
+    );
+    await preferences.setBool(
+      'kitchen_pos_modern_layout',
+      layout != _KitchenLayout.classic,
+    );
   }
 
   bool get _offlineSession =>
@@ -324,7 +346,11 @@ class _KitchenPosScreenState extends ConsumerState<KitchenPosScreen> {
 
   Future<void> _add(Product product) async {
     if (_orderLocked) return;
-    final modifiers = await selectProductModifiers(context, product);
+    final modifiers = await selectProductModifiers(
+      context,
+      product,
+      light: _lightLayout,
+    );
     if (modifiers == null || !mounted || _orderLocked) return;
     final newLine = CartLine(
       product: product,
@@ -351,6 +377,7 @@ class _KitchenPosScreenState extends ConsumerState<KitchenPosScreen> {
       line.product,
       initialModifiers: line.modifiers,
       confirmLabel: 'Update item',
+      light: _lightLayout,
     );
     if (modifiers == null || !mounted || _orderLocked) return;
     final updated = line.copyWith(
@@ -2115,11 +2142,11 @@ class _KitchenPosScreenState extends ConsumerState<KitchenPosScreen> {
           dividerColor: _desktopBorder,
           colorScheme: Theme.of(context).colorScheme.copyWith(
             surface: _desktopSurfaceRaised,
-            onSurface: Colors.white,
+            onSurface: _desktopText,
           ),
         ),
         child: DefaultTextStyle.merge(
-          style: const TextStyle(color: Colors.white),
+          style: TextStyle(color: _desktopText),
           child: SingleChildScrollView(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -2133,14 +2160,14 @@ class _KitchenPosScreenState extends ConsumerState<KitchenPosScreen> {
                         color: AppColors.primary.withValues(alpha: .22),
                         borderRadius: BorderRadius.circular(10),
                       ),
-                      child: const Icon(
+                      child: Icon(
                         Icons.dialpad_rounded,
                         color: _desktopAccent,
                         size: 20,
                       ),
                     ),
                     const SizedBox(width: 10),
-                    const Expanded(
+                    Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
@@ -2196,10 +2223,12 @@ class _KitchenPosScreenState extends ConsumerState<KitchenPosScreen> {
               ),
             )
           : OutlinedButton.styleFrom(
-              foregroundColor: Colors.white,
-              disabledForegroundColor: const Color(0xFF71858D),
+              foregroundColor: _desktopText,
+              disabledForegroundColor: _desktopTextMuted.withValues(alpha: .68),
               side: BorderSide(
-                color: onPressed == null
+                color: _lightLayout
+                    ? _desktopBorder
+                    : onPressed == null
                     ? const Color(0xFF42565E)
                     : const Color(0xFF7F949B),
               ),
@@ -2343,14 +2372,14 @@ class _KitchenPosScreenState extends ConsumerState<KitchenPosScreen> {
             ),
           ),
         ),
-        PopupMenuButton<bool>(
+        PopupMenuButton<_KitchenLayout>(
           key: const ValueKey('kitchen-layout-switcher'),
           tooltip: 'Kitchen POS layout',
-          initialValue: _modernLayout,
+          initialValue: _layout,
           onSelected: (value) => unawaited(_selectLayout(value)),
           itemBuilder: (_) => const [
             PopupMenuItem(
-              value: true,
+              value: _KitchenLayout.modern,
               child: ListTile(
                 dense: true,
                 leading: Icon(Icons.dashboard_customize_outlined),
@@ -2358,7 +2387,15 @@ class _KitchenPosScreenState extends ConsumerState<KitchenPosScreen> {
               ),
             ),
             PopupMenuItem(
-              value: false,
+              value: _KitchenLayout.light,
+              child: ListTile(
+                dense: true,
+                leading: Icon(Icons.light_mode_outlined),
+                title: Text('Light layout'),
+              ),
+            ),
+            PopupMenuItem(
+              value: _KitchenLayout.classic,
               child: ListTile(
                 dense: true,
                 leading: Icon(Icons.view_sidebar_outlined),
@@ -2366,12 +2403,11 @@ class _KitchenPosScreenState extends ConsumerState<KitchenPosScreen> {
               ),
             ),
           ],
-          icon: Icon(
-            _modernLayout
-                ? Icons.dashboard_customize_outlined
-                : Icons.view_sidebar_outlined,
-            color: Colors.white,
-          ),
+          icon: Icon(switch (_layout) {
+            _KitchenLayout.modern => Icons.dashboard_customize_outlined,
+            _KitchenLayout.light => Icons.light_mode_outlined,
+            _KitchenLayout.classic => Icons.view_sidebar_outlined,
+          }, color: Colors.white),
         ),
         _quickPrintToggle(),
         const SizedBox(width: 4),
@@ -2844,7 +2880,7 @@ class _KitchenPosScreenState extends ConsumerState<KitchenPosScreen> {
                 child: TextField(
                   controller: _search,
                   focusNode: _focus,
-                  style: TextStyle(color: wide ? Colors.white : AppColors.ink),
+                  style: TextStyle(color: wide ? _desktopText : AppColors.ink),
                   onChanged: (_) => setState(() {}),
                   onSubmitted: (_) {
                     if (products.length == 1) _add(products.first);
@@ -2855,7 +2891,7 @@ class _KitchenPosScreenState extends ConsumerState<KitchenPosScreen> {
                     hintStyle: TextStyle(
                       color: wide ? _desktopTextMuted : AppColors.muted,
                     ),
-                    prefixIconColor: wide ? Colors.white70 : null,
+                    prefixIconColor: wide ? _desktopTextMuted : null,
                     hintText: MediaQuery.sizeOf(context).width < 600
                         ? 'Search items'
                         : 'Search item name, SKU or barcode…',
@@ -2885,7 +2921,7 @@ class _KitchenPosScreenState extends ConsumerState<KitchenPosScreen> {
                   onPressed: _focus.requestFocus,
                   icon: const Icon(Icons.qr_code_scanner_outlined),
                   style: IconButton.styleFrom(
-                    foregroundColor: wide ? Colors.white : AppColors.ink,
+                    foregroundColor: wide ? _desktopText : AppColors.ink,
                     side: BorderSide(color: wide ? _desktopBorder : _border),
                   ),
                 ),
@@ -2898,11 +2934,11 @@ class _KitchenPosScreenState extends ConsumerState<KitchenPosScreen> {
                   ),
                   child: DefaultTextStyle.merge(
                     style: TextStyle(
-                      color: wide ? Colors.white : AppColors.ink,
+                      color: wide ? _desktopText : AppColors.ink,
                     ),
                     child: IconTheme(
                       data: IconThemeData(
-                        color: wide ? Colors.white : AppColors.ink,
+                        color: wide ? _desktopText : AppColors.ink,
                       ),
                       child: const ProductCardStylePicker(mode: 'kitchen'),
                     ),
@@ -2942,7 +2978,7 @@ class _KitchenPosScreenState extends ConsumerState<KitchenPosScreen> {
                               ? null
                               : () => setState(() => _addQuantity--),
                           icon: const Icon(Icons.remove, size: 16),
-                          color: wide ? Colors.white : AppColors.ink,
+                          color: wide ? _desktopText : AppColors.ink,
                           padding: EdgeInsets.zero,
                           constraints: const BoxConstraints.tightFor(
                             width: 29,
@@ -2952,14 +2988,14 @@ class _KitchenPosScreenState extends ConsumerState<KitchenPosScreen> {
                         Text(
                           'x$_addQuantity',
                           style: TextStyle(
-                            color: wide ? Colors.white : AppColors.ink,
+                            color: wide ? _desktopText : AppColors.ink,
                           ),
                         ),
                         IconButton(
                           tooltip: 'Increase add quantity',
                           onPressed: () => setState(() => _addQuantity++),
                           icon: const Icon(Icons.add, size: 16),
-                          color: wide ? Colors.white : AppColors.ink,
+                          color: wide ? _desktopText : AppColors.ink,
                           padding: EdgeInsets.zero,
                           constraints: const BoxConstraints.tightFor(
                             width: 29,
@@ -3105,8 +3141,10 @@ class _KitchenPosScreenState extends ConsumerState<KitchenPosScreen> {
               : desktop && horizontal
               ? _desktopSurfaceRaised
               : background,
-          foregroundColor: selected || (desktop && horizontal)
+          foregroundColor: selected
               ? Colors.white
+              : desktop && horizontal
+              ? _desktopText
               : AppColors.ink,
           side: BorderSide(
             color: selected
@@ -3246,7 +3284,7 @@ class _KitchenPosScreenState extends ConsumerState<KitchenPosScreen> {
                         textAlign: TextAlign.center,
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(
-                          color: desktop ? Colors.white : AppColors.ink,
+                          color: desktop ? _desktopText : AppColors.ink,
                           fontSize: 13,
                           fontWeight: FontWeight.w800,
                         ),
@@ -3288,7 +3326,7 @@ class _KitchenPosScreenState extends ConsumerState<KitchenPosScreen> {
         borderRadius: BorderRadius.circular(12),
       ),
       child: DefaultTextStyle.merge(
-        style: TextStyle(color: modernStyle ? Colors.white : AppColors.ink),
+        style: TextStyle(color: modernStyle ? _desktopText : AppColors.ink),
         child: Column(
           mainAxisSize: desktop ? MainAxisSize.max : MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -3735,12 +3773,24 @@ class _KitchenPosScreenState extends ConsumerState<KitchenPosScreen> {
       padding: EdgeInsets.zero,
       tapTargetSize: MaterialTapTargetSize.shrinkWrap,
       visualDensity: VisualDensity.compact,
-      backgroundColor: selected ? AppColors.primary : const Color(0xFF18343C),
-      foregroundColor: selected ? Colors.white : const Color(0xFFB8CFD3),
+      backgroundColor: selected
+          ? AppColors.primary
+          : _lightLayout
+          ? _desktopSurfaceRaised
+          : const Color(0xFF18343C),
+      foregroundColor: selected
+          ? Colors.white
+          : _lightLayout
+          ? _desktopText
+          : const Color(0xFFB8CFD3),
       disabledBackgroundColor: const Color(0xFFF1F3F2),
       disabledForegroundColor: const Color(0xFF9AA5A2),
       side: BorderSide(
-        color: selected ? AppColors.primary : const Color(0xFF456069),
+        color: selected
+            ? AppColors.primary
+            : _lightLayout
+            ? _desktopBorder
+            : const Color(0xFF456069),
       ),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(11)),
       textStyle: TextStyle(
@@ -3757,8 +3807,12 @@ class _KitchenPosScreenState extends ConsumerState<KitchenPosScreen> {
             padding: const EdgeInsets.symmetric(horizontal: 16),
             margin: EdgeInsets.only(bottom: gap),
             decoration: BoxDecoration(
-              color: const Color(0xFF0A1E24),
-              border: Border.all(color: const Color(0xFF35515A)),
+              color: _lightLayout
+                  ? _desktopSurfaceRaised
+                  : const Color(0xFF0A1E24),
+              border: Border.all(
+                color: _lightLayout ? _desktopBorder : const Color(0xFF35515A),
+              ),
               borderRadius: BorderRadius.circular(12),
             ),
             child: Row(
@@ -3774,7 +3828,7 @@ class _KitchenPosScreenState extends ConsumerState<KitchenPosScreen> {
                           'price' => 'UNIT PRICE',
                           _ => 'QUANTITY',
                         },
-                        style: const TextStyle(
+                        style: TextStyle(
                           color: _desktopTextMuted,
                           fontSize: 10,
                           fontWeight: FontWeight.w800,
@@ -3785,8 +3839,8 @@ class _KitchenPosScreenState extends ConsumerState<KitchenPosScreen> {
                       Text(
                         _keypadInput.isEmpty ? '—' : _keypadInput,
                         key: const ValueKey('kitchen-keypad-display'),
-                        style: const TextStyle(
-                          color: Colors.white,
+                        style: TextStyle(
+                          color: _desktopText,
                           fontSize: 22,
                           fontWeight: FontWeight.w900,
                         ),
@@ -3946,7 +4000,7 @@ class _KitchenPosScreenState extends ConsumerState<KitchenPosScreen> {
         ),
         RiyalAmount(
           amount,
-          style: TextStyle(color: desktop ? Colors.white : AppColors.ink),
+          style: TextStyle(color: desktop ? _desktopText : AppColors.ink),
         ),
       ],
     );
@@ -3997,241 +4051,265 @@ class _KitchenPosScreenState extends ConsumerState<KitchenPosScreen> {
                     ]
                   : null,
             ),
-            child: Row(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      InkWell(
-                        key: ValueKey('kitchen-cart-modifiers-${line.lineId}'),
-                        onTap:
-                            line.product.modifierGroups.any(
-                                  (group) => group.isActive,
-                                ) &&
-                                !_orderLocked
-                            ? () => unawaited(_editModifiers(line))
-                            : null,
-                        borderRadius: BorderRadius.circular(4),
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(vertical: 2),
-                          child: Row(
-                            children: [
-                              Expanded(
-                                child: Text(
-                                  line.product.displayName(
-                                    Localizations.localeOf(
-                                          context,
-                                        ).languageCode ==
-                                        'ar',
-                                  ),
-                                  maxLines: 2,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: TextStyle(
-                                    color: desktop
-                                        ? Colors.white
-                                        : AppColors.ink,
-                                    fontWeight: FontWeight.w700,
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                      Wrap(
-                        spacing: 7,
-                        runSpacing: 3,
-                        crossAxisAlignment: WrapCrossAlignment.center,
+                Row(
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          RiyalAmount(
-                            line.subtotal,
-                            style: TextStyle(
-                              color: desktop ? _desktopAccent : AppColors.ink,
+                          InkWell(
+                            key: ValueKey(
+                              'kitchen-cart-modifiers-${line.lineId}',
+                            ),
+                            onTap:
+                                line.product.modifierGroups.any(
+                                      (group) => group.isActive,
+                                    ) &&
+                                    !_orderLocked
+                                ? () => unawaited(_editModifiers(line))
+                                : null,
+                            borderRadius: BorderRadius.circular(4),
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(vertical: 2),
+                              child: Row(
+                                children: [
+                                  Expanded(
+                                    child: Text(
+                                      line.product.displayName(
+                                        Localizations.localeOf(
+                                              context,
+                                            ).languageCode ==
+                                            'ar',
+                                      ),
+                                      maxLines: 2,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: TextStyle(
+                                        color: desktop
+                                            ? _desktopText
+                                            : AppColors.ink,
+                                        fontWeight: FontWeight.w700,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
                             ),
                           ),
-                          if (line.unitPriceOverride != null)
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 6,
-                                vertical: 2,
-                              ),
-                              decoration: BoxDecoration(
-                                color: AppColors.primary.withValues(alpha: .16),
-                                borderRadius: BorderRadius.circular(999),
-                              ),
-                              child: Text(
-                                'Custom price',
+                          Wrap(
+                            spacing: 7,
+                            runSpacing: 3,
+                            crossAxisAlignment: WrapCrossAlignment.center,
+                            children: [
+                              RiyalAmount(
+                                line.subtotal,
                                 style: TextStyle(
                                   color: desktop
                                       ? _desktopAccent
-                                      : AppColors.primary,
-                                  fontSize: 9,
-                                  fontWeight: FontWeight.w800,
+                                      : AppColors.ink,
                                 ),
                               ),
-                            ),
+                              if (line.unitPriceOverride != null)
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 6,
+                                    vertical: 2,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: AppColors.primary.withValues(
+                                      alpha: .16,
+                                    ),
+                                    borderRadius: BorderRadius.circular(999),
+                                  ),
+                                  child: Text(
+                                    'Custom price',
+                                    style: TextStyle(
+                                      color: desktop
+                                          ? _desktopAccent
+                                          : AppColors.primary,
+                                      fontSize: 9,
+                                      fontWeight: FontWeight.w800,
+                                    ),
+                                  ),
+                                ),
+                            ],
+                          ),
                         ],
                       ),
-                      if (line.product.modifierGroups.any(
-                        (group) => group.isActive,
-                      ))
-                        Padding(
-                          padding: const EdgeInsets.only(top: 3),
-                          child: OutlinedButton.icon(
-                            key: ValueKey(
-                              'kitchen-cart-add-modifiers-${line.lineId}',
-                            ),
-                            onPressed: _orderLocked
-                                ? null
-                                : () => unawaited(_editModifiers(line)),
-                            icon: const Icon(Icons.tune_rounded, size: 15),
-                            label: Text(
-                              line.modifiers.isEmpty
-                                  ? 'Add modifiers'
-                                  : 'Edit modifiers',
-                            ),
-                            style: OutlinedButton.styleFrom(
-                              foregroundColor: AppColors.primary,
-                              backgroundColor: const Color(0xFFEAF6F2),
-                              side: const BorderSide(color: Color(0xFF9FCFC2)),
-                              minimumSize: const Size(0, 32),
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 8,
-                              ),
-                              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                              visualDensity: VisualDensity.compact,
-                              textStyle: const TextStyle(
-                                fontSize: 11,
-                                fontWeight: FontWeight.w800,
-                              ),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(6),
-                              ),
-                            ),
-                          ),
+                    ),
+                    IconButton.outlined(
+                      tooltip: 'Decrease quantity',
+                      onPressed: () => _changeQuantity(line, -1),
+                      icon: const Icon(Icons.remove, size: 16),
+                      constraints: const BoxConstraints.tightFor(
+                        width: 30,
+                        height: 30,
+                      ),
+                      padding: EdgeInsets.zero,
+                      visualDensity: VisualDensity.compact,
+                      style: IconButton.styleFrom(
+                        foregroundColor: desktop ? _desktopText : AppColors.ink,
+                        minimumSize: const Size.square(30),
+                        maximumSize: const Size.square(30),
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        side: const BorderSide(color: Color(0xFF98A6A1)),
+                      ),
+                    ),
+                    const SizedBox(width: 4),
+                    Text('${line.quantity}'),
+                    const SizedBox(width: 4),
+                    IconButton.outlined(
+                      tooltip: 'Increase quantity',
+                      onPressed: () => _changeQuantity(line, 1),
+                      icon: const Icon(Icons.add, size: 16),
+                      constraints: const BoxConstraints.tightFor(
+                        width: 30,
+                        height: 30,
+                      ),
+                      padding: EdgeInsets.zero,
+                      visualDensity: VisualDensity.compact,
+                      style: IconButton.styleFrom(
+                        foregroundColor: desktop ? _desktopText : AppColors.ink,
+                        minimumSize: const Size.square(30),
+                        maximumSize: const Size.square(30),
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        side: const BorderSide(color: Color(0xFF98A6A1)),
+                      ),
+                    ),
+                    IconButton(
+                      key: ValueKey('kitchen-edit-price-${line.lineId}'),
+                      tooltip: 'Edit unit price',
+                      onPressed: _orderLocked
+                          ? null
+                          : () => unawaited(_editLinePrice(line)),
+                      icon: const Icon(Icons.price_change_outlined, size: 17),
+                      color: desktop ? _desktopAccent : AppColors.primary,
+                      visualDensity: VisualDensity.compact,
+                      constraints: const BoxConstraints.tightFor(
+                        width: 28,
+                        height: 30,
+                      ),
+                      padding: EdgeInsets.zero,
+                      style: IconButton.styleFrom(
+                        minimumSize: const Size(28, 30),
+                        maximumSize: const Size(28, 30),
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      ),
+                    ),
+                    IconButton(
+                      tooltip: 'Remove item',
+                      onPressed: () =>
+                          setState(() => _lines.remove(line.lineId)),
+                      icon: const Icon(Icons.delete_outline, size: 18),
+                      color: AppColors.danger,
+                      visualDensity: VisualDensity.compact,
+                      constraints: const BoxConstraints.tightFor(
+                        width: 28,
+                        height: 30,
+                      ),
+                      padding: EdgeInsets.zero,
+                      style: IconButton.styleFrom(
+                        minimumSize: const Size(28, 30),
+                        maximumSize: const Size(28, 30),
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 2),
+                Wrap(
+                  spacing: 6,
+                  runSpacing: 2,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: [
+                    if (line.product.modifierGroups.any(
+                      (group) => group.isActive,
+                    ))
+                      OutlinedButton.icon(
+                        key: ValueKey(
+                          'kitchen-cart-add-modifiers-${line.lineId}',
                         ),
-                      if (line.modifiers.isNotEmpty)
-                        Text(
-                          line.modifiers
-                              .map((modifier) => modifier.name)
-                              .join(' • '),
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            color: _desktopTextMuted,
+                        onPressed: _orderLocked
+                            ? null
+                            : () => unawaited(_editModifiers(line)),
+                        icon: const Icon(Icons.tune_rounded, size: 15),
+                        label: Text(
+                          line.modifiers.isEmpty
+                              ? 'Add modifiers'
+                              : 'Edit modifiers',
+                        ),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: AppColors.primary,
+                          backgroundColor: const Color(0xFFEAF6F2),
+                          side: const BorderSide(color: Color(0xFF9FCFC2)),
+                          minimumSize: const Size(0, 34),
+                          padding: const EdgeInsets.symmetric(horizontal: 8),
+                          textStyle: const TextStyle(
                             fontSize: 11,
+                            fontWeight: FontWeight.w800,
+                          ),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(6),
                           ),
                         ),
-                      if (line.itemNote.isNotEmpty)
-                        Text(
-                          line.itemNote,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            color: AppColors.primary,
-                            fontSize: 10,
-                          ),
+                      ),
+                    OutlinedButton.icon(
+                      key: ValueKey('kitchen-item-note-${line.lineId}'),
+                      onPressed: _orderLocked
+                          ? null
+                          : () => unawaited(_editItemNote(line)),
+                      icon: const Icon(Icons.edit_note_rounded, size: 18),
+                      label: Text(
+                        line.itemNote.isEmpty ? 'Add note' : 'Edit note',
+                      ),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: desktop
+                            ? _desktopAccent
+                            : AppColors.primary,
+                        backgroundColor: AppColors.primary.withValues(
+                          alpha: desktop && !_lightLayout ? .24 : .08,
                         ),
-                    ],
-                  ),
-                ),
-                IconButton.outlined(
-                  tooltip: 'Decrease quantity',
-                  onPressed: () => _changeQuantity(line, -1),
-                  icon: const Icon(Icons.remove, size: 16),
-                  constraints: const BoxConstraints.tightFor(
-                    width: 30,
-                    height: 30,
-                  ),
-                  padding: EdgeInsets.zero,
-                  visualDensity: VisualDensity.compact,
-                  style: IconButton.styleFrom(
-                    foregroundColor: desktop ? Colors.white : AppColors.ink,
-                    minimumSize: const Size.square(30),
-                    maximumSize: const Size.square(30),
-                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                    side: const BorderSide(color: Color(0xFF98A6A1)),
-                  ),
-                ),
-                const SizedBox(width: 4),
-                Text('${line.quantity}'),
-                const SizedBox(width: 4),
-                IconButton.outlined(
-                  tooltip: 'Increase quantity',
-                  onPressed: () => _changeQuantity(line, 1),
-                  icon: const Icon(Icons.add, size: 16),
-                  constraints: const BoxConstraints.tightFor(
-                    width: 30,
-                    height: 30,
-                  ),
-                  padding: EdgeInsets.zero,
-                  visualDensity: VisualDensity.compact,
-                  style: IconButton.styleFrom(
-                    foregroundColor: desktop ? Colors.white : AppColors.ink,
-                    minimumSize: const Size.square(30),
-                    maximumSize: const Size.square(30),
-                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                    side: const BorderSide(color: Color(0xFF98A6A1)),
-                  ),
-                ),
-                IconButton(
-                  key: ValueKey('kitchen-edit-price-${line.lineId}'),
-                  tooltip: 'Edit unit price',
-                  onPressed: _orderLocked
-                      ? null
-                      : () => unawaited(_editLinePrice(line)),
-                  icon: const Icon(Icons.price_change_outlined, size: 17),
-                  color: desktop ? _desktopAccent : AppColors.primary,
-                  visualDensity: VisualDensity.compact,
-                  constraints: const BoxConstraints.tightFor(
-                    width: 28,
-                    height: 30,
-                  ),
-                  padding: EdgeInsets.zero,
-                  style: IconButton.styleFrom(
-                    minimumSize: const Size(28, 30),
-                    maximumSize: const Size(28, 30),
-                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                  ),
-                ),
-                IconButton(
-                  tooltip: line.itemNote.isEmpty
-                      ? 'Add item note'
-                      : 'Edit item note',
-                  onPressed: _orderLocked
-                      ? null
-                      : () => unawaited(_editItemNote(line)),
-                  icon: const Icon(Icons.edit_note_outlined, size: 17),
-                  color: AppColors.primary,
-                  visualDensity: VisualDensity.compact,
-                  constraints: const BoxConstraints.tightFor(
-                    width: 28,
-                    height: 30,
-                  ),
-                  padding: EdgeInsets.zero,
-                  style: IconButton.styleFrom(
-                    minimumSize: const Size(28, 30),
-                    maximumSize: const Size(28, 30),
-                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                  ),
-                ),
-                IconButton(
-                  tooltip: 'Remove item',
-                  onPressed: () => setState(() => _lines.remove(line.lineId)),
-                  icon: const Icon(Icons.delete_outline, size: 18),
-                  color: AppColors.danger,
-                  visualDensity: VisualDensity.compact,
-                  constraints: const BoxConstraints.tightFor(
-                    width: 28,
-                    height: 30,
-                  ),
-                  padding: EdgeInsets.zero,
-                  style: IconButton.styleFrom(
-                    minimumSize: const Size(28, 30),
-                    maximumSize: const Size(28, 30),
-                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                  ),
+                        side: BorderSide(
+                          color: _orderLocked
+                              ? (desktop ? _desktopBorder : _border)
+                              : (desktop ? _desktopAccent : AppColors.primary),
+                        ),
+                        minimumSize: const Size(0, 34),
+                        padding: const EdgeInsets.symmetric(horizontal: 8),
+                        textStyle: const TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                        ),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(7),
+                        ),
+                      ),
+                    ),
+                    if (line.modifiers.isNotEmpty)
+                      Text(
+                        line.modifiers
+                            .map((modifier) => modifier.name)
+                            .join(' • '),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: desktop ? _desktopTextMuted : AppColors.muted,
+                          fontSize: 11,
+                        ),
+                      ),
+                    if (line.itemNote.isNotEmpty)
+                      Text(
+                        line.itemNote,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: desktop ? _desktopTextMuted : AppColors.muted,
+                          fontSize: 12,
+                        ),
+                      ),
+                  ],
                 ),
               ],
             ),

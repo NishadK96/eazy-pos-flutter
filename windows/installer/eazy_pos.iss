@@ -3,7 +3,9 @@
 #endif
 
 #define MyAppName "Eazy POS"
-#define MyAppPublisher "Eazy POS"
+#ifndef MyAppPublisher
+  #define MyAppPublisher "Eazy POS"
+#endif
 #define MyAppExeName "EazyPOS.exe"
 
 [Setup]
@@ -30,6 +32,13 @@ UsePreviousAppDir=yes
 CloseApplications=yes
 RestartApplications=yes
 ChangesAssociations=no
+#ifdef EnableCodeSigning
+  ; The signed-release script supplies the "possign" command at compile time.
+  ; This signs the generated uninstaller and final setup executable without
+  ; storing certificate details or credentials in this project.
+  SignedUninstaller=yes
+  SignTool=possign
+#endif
 
 [Languages]
 Name: "english"; MessagesFile: "compiler:Default.isl"

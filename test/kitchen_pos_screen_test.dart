@@ -76,12 +76,40 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('kitchen-product-1')));
     await tester.pumpAndSettle();
 
+    await tester.tap(find.text('Add note'));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.widgetWithText(TextField, 'Preparation instructions for this item'),
+      'No ice',
+    );
+    await tester.tap(find.text('Save'));
+    await tester.pumpAndSettle();
+    expect(find.text('Edit note'), findsOneWidget);
+
+    await tester.tap(find.byKey(const ValueKey('kitchen-layout-switcher')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Light layout'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Quick edit keypad'), findsOneWidget);
+    expect(find.text('Edit note'), findsOneWidget);
+    expect(find.text('No ice'), findsOneWidget);
+    expect(find.text('1 items'), findsOneWidget);
+    expect(
+      (await SharedPreferences.getInstance()).getBool(
+        'kitchen_pos_light_layout',
+      ),
+      isTrue,
+    );
+
     await tester.tap(find.byKey(const ValueKey('kitchen-layout-switcher')));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Classic layout'));
     await tester.pumpAndSettle();
 
     expect(find.text('Current Order'), findsOneWidget);
+    expect(find.text('Edit note'), findsOneWidget);
+    expect(find.text('No ice'), findsOneWidget);
     expect(find.text('1 items'), findsOneWidget);
     expect(
       tester

@@ -44,6 +44,7 @@ class Product {
     this.nameEn = '',
     this.nameAr = '',
     this.modifierGroups = const [],
+    this.editDetails,
   });
   final String id,
       name,
@@ -62,6 +63,7 @@ class Product {
   final bool sellingPriceIncludesTax;
   final bool active;
   final List<ModifierGroup> modifierGroups;
+  final ProductEditDetails? editDetails;
   Product copyWith({
     String? name,
     String? sku,
@@ -99,6 +101,7 @@ class Product {
     nameEn: nameEn ?? this.nameEn,
     nameAr: nameAr ?? this.nameAr,
     modifierGroups: modifierGroups ?? this.modifierGroups,
+    editDetails: editDetails,
   );
 
   String displayName(bool arabic) {
@@ -106,6 +109,43 @@ class Product {
     if (!arabic && nameEn.trim().isNotEmpty) return nameEn.trim();
     return name;
   }
+}
+
+/// Editable catalog values kept separately from tax-inclusive POS prices.
+class ProductEditDetails {
+  const ProductEditDetails({
+    this.purchasePrice,
+    this.purchasePriceIncTax,
+    this.sellingPrice,
+    this.sellingPriceIncTax,
+    this.profitPercent,
+    this.brandId = '',
+    this.subCategoryId = '',
+    this.barcodeType = 'C128',
+    this.taxType = 'exclusive',
+    this.manageStock = true,
+    this.enableSerialNumber = false,
+    this.notForSelling = false,
+    this.locationIds = const [],
+    this.description = '',
+    this.weight = '',
+    this.preparationMinutes,
+  });
+
+  final int? purchasePrice,
+      purchasePriceIncTax,
+      sellingPrice,
+      sellingPriceIncTax;
+  final double? profitPercent;
+  final String brandId,
+      subCategoryId,
+      barcodeType,
+      taxType,
+      description,
+      weight;
+  final bool manageStock, enableSerialNumber, notForSelling;
+  final List<String> locationIds;
+  final int? preparationMinutes;
 }
 
 class ModifierGroup {

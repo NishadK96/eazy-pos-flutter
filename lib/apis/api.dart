@@ -993,7 +993,32 @@ class Api {
         .send(request)
         .timeout(const Duration(seconds: 60));
     final response = await http.Response.fromStream(streamed);
-    return _requireObject(response, 'product');
+    try {
+      return _requireObject(response, 'product');
+    } on ApiException catch (error) {
+      throw _productValidationError(error);
+    }
+  }
+
+  ApiException _productValidationError(ApiException error) {
+    final messages = <String>[];
+    void collect(dynamic value) {
+      if (value is Map) {
+        value.values.forEach(collect);
+      } else if (value is List) {
+        value.forEach(collect);
+      } else if (value is String && value.trim().isNotEmpty) {
+        messages.add(value.trim());
+      }
+    }
+
+    collect(error.validationErrors);
+    if (messages.isEmpty) return error;
+    return ApiException(
+      messages.toSet().join('\n'),
+      statusCode: error.statusCode,
+      validationErrors: error.validationErrors,
+    );
   }
 
   Product _productFromWriteResponse(
@@ -1093,8 +1118,12 @@ class Api {
         if (excludeProductId != null) 'exclude_product_id': excludeProductId,
       }),
     );
-    final payload = _requireObject(response, 'SKU availability');
-    return payload['available'] == true;
+    try {
+      final payload = _requireObject(response, 'SKU availability');
+      return payload['available'] == true;
+    } on ApiException catch (error) {
+      throw _productValidationError(error);
+    }
   }
 
   Future<void> deleteProduct(String accessToken, String id) => _catalogMutation(
@@ -3957,13 +3986,14 @@ class Api {
           )
         : 0.0;
     final category = json['category'];
-    final categoryId = category is Map<String, dynamic>
-        ? category['id']?.toString() ?? ''
-        : '';
+    final categoryId =
+        _map(category)['id']?.toString() ??
+        json['category_id']?.toString() ??
+        '';
     final sku = json['sku']?.toString() ?? '';
     final productTax = _map(json['product_tax']);
     return Product(
-      id: json['id'].toString(),
+      id: json['id']?.toString() ?? '',
       name: json['name']?.toString() ?? '',
       nameEn: json['name_en']?.toString() ?? '',
       nameAr: json['name_ar']?.toString() ?? '',
@@ -3987,6 +4017,46 @@ class Api {
       taxId: productTax['id']?.toString() ?? json['tax']?.toString() ?? '',
       active: json['is_inactive'] != 1,
       imageUrl: json['image_url']?.toString() ?? '',
+      editDetails: ProductEditDetails(
+        purchasePrice: variation['default_purchase_price'] == null
+            ? null
+            : _money(variation['default_purchase_price']),
+        purchasePriceIncTax: variation['dpp_inc_tax'] == null
+            ? null
+            : _money(variation['dpp_inc_tax']),
+        sellingPrice: variation['default_sell_price'] == null
+            ? null
+            : _money(variation['default_sell_price']),
+        sellingPriceIncTax: variation['sell_price_inc_tax'] == null
+            ? null
+            : _money(variation['sell_price_inc_tax']),
+        profitPercent: variation['profit_percent'] == null
+            ? null
+            : _number(variation['profit_percent']),
+        brandId:
+            _map(json['brand'])['id']?.toString() ??
+            json['brand_id']?.toString() ??
+            '',
+        subCategoryId:
+            _map(json['sub_category'])['id']?.toString() ??
+            json['sub_category_id']?.toString() ??
+            '',
+        barcodeType: json['barcode_type']?.toString() ?? 'C128',
+        taxType: json['tax_type']?.toString() ?? 'exclusive',
+        manageStock: _bool(json['enable_stock'], fallback: true),
+        enableSerialNumber: _bool(json['enable_sr_no']),
+        notForSelling: _bool(json['not_for_selling']),
+        locationIds: (json['product_locations'] as List? ?? const [])
+            .map((item) => item is Map ? item['id'] : item)
+            .where((id) => id != null)
+            .map((id) => id.toString())
+            .toList(growable: false),
+        description: json['product_description']?.toString() ?? '',
+        weight: json['weight']?.toString() ?? '',
+        preparationMinutes: int.tryParse(
+          json['preparation_time_in_minutes']?.toString() ?? '',
+        ),
+      ),
       modifierGroups: _modifierGroupsFromJson(json['modifier_groups']),
     );
   }

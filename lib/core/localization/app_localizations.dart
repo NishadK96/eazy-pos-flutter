@@ -550,6 +550,16 @@ const Map<String, String> _ar = {
   'Product image removed.': 'تمت إزالة صورة المنتج.',
   'This SKU is already in use.': 'رمز المنتج هذا مستخدم بالفعل.',
   'Product saved. Add the next product.': 'تم حفظ المنتج. أضف المنتج التالي.',
+  'Check product details': 'تحقق من تفاصيل المنتج',
+  'Correct these fields before saving your product.':
+      'صحح هذه الحقول قبل حفظ منتجك.',
+  'Review fields': 'مراجعة الحقول',
+  'Unit is required': 'الوحدة مطلوبة',
+  'Unable to save product': 'تعذر حفظ المنتج',
+  'The save request timed out. Check your connection and try again.':
+      'انتهت مهلة طلب الحفظ. تحقق من اتصالك وحاول مرة أخرى.',
+  'An unexpected error prevented saving. Please try again.':
+      'حدث خطأ غير متوقع منع الحفظ. يرجى المحاولة مرة أخرى.',
   'Unable to create the unit. Try again.': 'تعذر إنشاء الوحدة. حاول مرة أخرى.',
   'XLS, XLSX, CSV or TXT • maximum 100 MB':
       'XLS أو XLSX أو CSV أو TXT • الحد الأقصى 100 ميجابايت',

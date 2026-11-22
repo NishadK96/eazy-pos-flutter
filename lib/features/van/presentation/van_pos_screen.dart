@@ -716,6 +716,27 @@ class _VanPosScreenState extends ConsumerState<VanPosScreen> {
                             color: AppColors.muted,
                           ),
                         ),
+                        if (product.stock <= 0) ...[
+                          const SizedBox(height: 5),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 7,
+                              vertical: 3,
+                            ),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFFFE8E6),
+                              borderRadius: BorderRadius.circular(6),
+                            ),
+                            child: const Text(
+                              'Out of stock',
+                              style: TextStyle(
+                                color: Color(0xFFB42318),
+                                fontSize: 11,
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                          ),
+                        ],
                       ],
                     ),
                   ),
@@ -730,7 +751,9 @@ class _VanPosScreenState extends ConsumerState<VanPosScreen> {
                   const SizedBox(width: 8),
                   IconButton.filledTonal(
                     tooltip: '${context.tr('Add')} ${product.name}',
-                    onPressed: () => _change(product, 1, allowOverselling),
+                    onPressed: product.stock <= 0 && !allowOverselling
+                        ? null
+                        : () => _change(product, 1, allowOverselling),
                     style: IconButton.styleFrom(
                       backgroundColor: const Color(0xFFDDF4EC),
                       foregroundColor: AppColors.primary,
