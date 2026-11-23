@@ -137,11 +137,43 @@ class AuthController extends AsyncNotifier<String?> {
     }
     if (failure is http.ClientException) return 'HTTP-CLIENT';
     return switch (failure.runtimeType.toString()) {
-      'HandshakeException' => 'TLS',
+      'HandshakeException' => _safeTlsFailureKind(failure),
       'SocketException' => 'SOCKET',
       'FormatException' => 'RESPONSE-FORMAT',
       _ => 'UNEXPECTED',
     };
+  }
+
+  String _safeTlsFailureKind(Object failure) {
+    final detail = failure.toString().toUpperCase();
+    // Return only fixed labels. Never expose the original exception text.
+    if (detail.contains('HOSTNAME_MISMATCH') ||
+        detail.contains('HOSTNAME MISMATCH')) {
+      return 'TLS-HOSTNAME';
+    }
+    if (detail.contains('CERTIFICATE HAS EXPIRED') ||
+        detail.contains('CERTIFICATE_EXPIRED') ||
+        detail.contains('CERTIFICATE IS NOT YET VALID')) {
+      return 'TLS-CERT-DATE';
+    }
+    if (detail.contains('UNABLE TO GET LOCAL ISSUER') ||
+        detail.contains('UNABLE TO VERIFY THE FIRST CERTIFICATE') ||
+        detail.contains('SELF-SIGNED CERTIFICATE')) {
+      return 'TLS-CERT-TRUST';
+    }
+    if (detail.contains('CERTIFICATE_VERIFY_FAILED')) return 'TLS-CERT-VERIFY';
+    if (detail.contains('PROTOCOL_VERSION') ||
+        detail.contains('WRONG_VERSION_NUMBER') ||
+        detail.contains('UNSUPPORTED_PROTOCOL')) {
+      return 'TLS-PROTOCOL';
+    }
+    if (detail.contains('HANDSHAKE_FAILURE')) return 'TLS-PEER-ALERT';
+    if (detail.contains('UNEXPECTED_EOF') ||
+        detail.contains('CONNECTION RESET') ||
+        detail.contains('CONNECTION TERMINATED')) {
+      return 'TLS-CONNECTION-CLOSED';
+    }
+    return 'TLS-OTHER';
   }
 
   Future<List<SavedAccountSession>> savedAccounts() async {
