@@ -1,9 +1,9 @@
 import 'package:eazy_pos/core/utils/money.dart';
 import 'package:eazy_pos/core/localization/app_localizations.dart';
 import 'package:eazy_pos/features/kitchen/presentation/kitchen_pos_screen.dart';
+import 'package:eazy_pos/features/settings/application/order_type_settings_controller.dart';
 import 'package:eazy_pos/features/store/app_store.dart';
 import 'package:eazy_pos/shared/models/entities.dart';
-import 'package:eazy_pos/shared/widgets/localized_text.dart' as localized;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -60,6 +60,9 @@ void main() {
     addTearDown(tester.view.resetDevicePixelRatio);
     final container = ProviderContainer();
     addTearDown(container.dispose);
+    await container
+        .read(orderTypeSettingsProvider.notifier)
+        .setKitchenDefault('Delivery');
     container
         .read(appStoreProvider.notifier)
         .replaceCatalog(
@@ -73,7 +76,30 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const ValueKey('kitchen-product-1')));
+    expect(
+      tester
+          .widget<DropdownButton<String>>(
+            find.byKey(const ValueKey('kitchen-order-type')),
+          )
+          .value,
+      'Delivery',
+    );
+    final productCard = find.byKey(const ValueKey('kitchen-product-1'));
+    final standardCard = tester.getSize(productCard);
+    await tester.tap(find.byKey(const ValueKey('kitchen-card-size')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('kitchen-card-size-compact')));
+    await tester.pumpAndSettle();
+    expect(tester.getSize(productCard).height, lessThan(standardCard.height));
+    expect(tester.getSize(productCard).width, lessThan(standardCard.width));
+    expect(tester.widget<Text>(find.text('Tea')).style?.fontSize, lessThan(13));
+    expect(
+      (await SharedPreferences.getInstance()).getString(
+        'kitchen_pos_product_card_size',
+      ),
+      'compact',
+    );
+    await tester.tap(productCard);
     await tester.pumpAndSettle();
 
     await tester.tap(find.text('Add note'));
@@ -233,6 +259,7 @@ void main() {
     testWidgets('kitchen order draft stays usable at ${size.width}px', (
       tester,
     ) async {
+      SharedPreferences.setMockInitialValues({});
       tester.view.physicalSize = size;
       tester.view.devicePixelRatio = 1;
       addTearDown(tester.view.resetPhysicalSize);
@@ -256,26 +283,17 @@ void main() {
       expect(find.text('Tea'), findsOneWidget);
       expect(tester.takeException(), isNull);
       expect(find.byKey(const ValueKey('kitchen-table-card')), findsNothing);
+      final orderType = find.byKey(const ValueKey('kitchen-order-type'));
+      expect(
+        tester.widget<DropdownButton<String>>(orderType).value,
+        'Takeaway',
+      );
+      await tester.tap(orderType);
+      await tester.pumpAndSettle();
       await tester.tap(find.text('Dine in'));
       await tester.pumpAndSettle();
-      expect(
-        tester
-            .widget<localized.Text>(
-              find.byKey(const ValueKey('kitchen-guest-count')),
-            )
-            .data,
-        '1',
-      );
-      await tester.tap(find.byTooltip('Add guest'));
-      await tester.pump();
-      expect(
-        tester
-            .widget<localized.Text>(
-              find.byKey(const ValueKey('kitchen-guest-count')),
-            )
-            .data,
-        '2',
-      );
+      expect(find.byTooltip('Add guest'), findsNothing);
+      expect(find.text('No waiter'), findsNothing);
       if (size.width >= 1100) {
         final tableRect = tester.getRect(
           find.byKey(const ValueKey('kitchen-table-card')),

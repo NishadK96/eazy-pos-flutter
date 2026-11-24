@@ -20,7 +20,7 @@ abstract final class OfflineKitchenTemplate {
     html, body { width: 80mm; margin: 0; padding: 0; }
     .ticket {
       width: 80mm; max-width: 80mm; margin: 0; padding: 2mm 3mm;
-      font-family: Tahoma, Arial, sans-serif; font-size: 12px;
+      font-family: "Noto Kufi Arabic", Tahoma, Arial, sans-serif; font-size: 12px;
       line-height: 1.3; direction: rtl; unicode-bidi: plaintext;
     }
     .center { text-align: center; }

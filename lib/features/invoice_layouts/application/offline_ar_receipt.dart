@@ -6,6 +6,7 @@ import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
 
+import '../../../core/utils/arabic_print_font.dart';
 import '../../../core/utils/pdf_fonts.dart';
 import '../../../shared/models/entities.dart';
 import '../../offline_pos/domain/provisional_receipt_qr.dart';
@@ -38,7 +39,10 @@ abstract final class OfflineArabicReceipt {
       final info = await Printing.info();
       if (info.canConvertHtml) {
         // ignore: deprecated_member_use
-        return await Printing.convertHtml(html: html, format: pageFormat);
+        return await Printing.convertHtml(
+          html: await embedArabicPrintFont(html),
+          format: pageFormat,
+        );
       }
     } catch (_) {
       // Windows and web do not provide HTML-to-PDF in the printing plugin.

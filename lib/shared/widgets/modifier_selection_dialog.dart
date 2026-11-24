@@ -521,7 +521,7 @@ class _ModifierSelectionDialogState extends State<_ModifierSelectionDialog> {
                 child: Checkbox(
                   value: isSelected,
                   activeColor: _checkFill,
-                  checkColor: _text,
+                  checkColor: Colors.white,
                   side: const BorderSide(color: Color(0xFF6C858B)),
                   onChanged: (value) {
                     setState(() => _focusedOption = optionIndex);
@@ -547,7 +547,7 @@ class _ModifierSelectionDialogState extends State<_ModifierSelectionDialog> {
                         fontWeight: isSelected || focused
                             ? FontWeight.w800
                             : FontWeight.w600,
-                        color: isSelected || focused ? _accent : Colors.white,
+                        color: isSelected || focused ? _accent : _text,
                       ),
                     ),
                     if (option.subSku.isNotEmpty) ...[

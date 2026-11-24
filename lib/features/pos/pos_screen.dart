@@ -9043,7 +9043,7 @@ class _CustomerSelectorDialogState extends State<_CustomerSelectorDialog> {
                               fontWeight: FontWeight.w900,
                             ).copyWith(
                               fontFamily: hasArabicName
-                                  ? 'NotoSansArabic'
+                                  ? 'NotoKufiArabic'
                                   : null,
                             ),
                       ),
@@ -9066,7 +9066,7 @@ class _CustomerSelectorDialogState extends State<_CustomerSelectorDialog> {
                             style: TextStyle(
                               fontWeight: FontWeight.w800,
                               fontFamily: hasArabicName
-                                  ? 'NotoSansArabic'
+                                  ? 'NotoKufiArabic'
                                   : null,
                             ),
                           ),

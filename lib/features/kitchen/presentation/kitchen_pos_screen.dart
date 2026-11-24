@@ -26,6 +26,7 @@ import '../../invoice_layouts/presentation/invoice_layout_controller.dart';
 import '../../offline_pos/presentation/offline_pos_controller.dart';
 import '../../printers/application/printer_controller.dart';
 import '../../settings/application/order_type_settings_controller.dart';
+import '../../settings/application/payment_method_settings_controller.dart';
 import '../../settings/application/pos_operating_mode_controller.dart';
 import 'kitchen_printing_controller.dart';
 
@@ -151,8 +152,21 @@ class _KitchenResizeHandle extends StatelessWidget {
 
 enum _KitchenLayout { modern, light, classic }
 
+enum _KitchenCardSize {
+  compact('Compact', .76),
+  small('Small', .88),
+  standard('Standard', 1),
+  large('Large', 1.2);
+
+  const _KitchenCardSize(this.label, this.scale);
+
+  final String label;
+  final double scale;
+}
+
 class _KitchenPosScreenState extends ConsumerState<KitchenPosScreen> {
   static const _border = Color(0xFFDCE5E2);
+  static const _cardSizePreference = 'kitchen_pos_product_card_size';
   Color get _desktopCanvas =>
       _lightLayout ? const Color(0xFFEDF4F2) : const Color(0xFF091720);
   Color get _desktopSurface =>
@@ -201,10 +215,42 @@ class _KitchenPosScreenState extends ConsumerState<KitchenPosScreen> {
   final _focus = FocusNode();
   final Map<String, CartLine> _lines = {};
   String _category = '';
-  String _service = 'Takeaway';
+  String? _selectedService;
+  String get _service {
+    final settings = ref.read(orderTypeSettingsProvider);
+    final selected = _selectedService;
+    return selected != null &&
+            settings.apply().any((item) => item.code == selected)
+        ? selected
+        : settings.kitchenDefault;
+  }
+
   String? _tableId;
   String? _waiterId;
-  String? _serviceTypeId;
+  String? _savedServiceTypeId;
+  String? get _serviceTypeId {
+    final service = _service;
+    if (_selectedService == service && _savedServiceTypeId != null) {
+      return _savedServiceTypeId;
+    }
+    final locationId = _locationId(ref.read(appStoreProvider));
+    if (locationId == null || locationId.isEmpty) return null;
+    final serviceTypes = ref
+        .read(kitchenRestaurantContextProvider(locationId))
+        .asData
+        ?.value
+        .serviceTypes;
+    final code = service.toLowerCase().replaceAll(' ', '');
+    return serviceTypes
+        ?.where((option) {
+          final name = option.name.toLowerCase().replaceAll(' ', '');
+          return name.isNotEmpty &&
+              (name.contains(code) || code.contains(name));
+        })
+        .firstOrNull
+        ?.id;
+  }
+
   String _note = '';
   int _guests = 1;
   int _grossDiscount = 0;
@@ -214,6 +260,7 @@ class _KitchenPosScreenState extends ConsumerState<KitchenPosScreen> {
   String _keypadMode = 'qty';
   bool _showMobileOrder = false;
   _KitchenLayout _layout = _KitchenLayout.modern;
+  _KitchenCardSize _cardSize = _KitchenCardSize.standard;
   bool get _modernLayout => _layout != _KitchenLayout.classic;
   bool get _lightLayout => _layout == _KitchenLayout.light;
   Color get _desktopText => _lightLayout ? AppColors.ink : Colors.white;
@@ -239,13 +286,25 @@ class _KitchenPosScreenState extends ConsumerState<KitchenPosScreen> {
   Future<void> _loadLayoutPreference() async {
     final preferences = await SharedPreferences.getInstance();
     if (!mounted) return;
+    final cardSizeName = preferences.getString(_cardSizePreference);
     setState(() {
+      _cardSize = _KitchenCardSize.values.firstWhere(
+        (size) => size.name == cardSizeName,
+        orElse: () => _KitchenCardSize.standard,
+      );
       _layout = preferences.getBool('kitchen_pos_light_layout') == true
           ? _KitchenLayout.light
           : preferences.getBool('kitchen_pos_modern_layout') == false
           ? _KitchenLayout.classic
           : _KitchenLayout.modern;
     });
+  }
+
+  Future<void> _selectCardSize(_KitchenCardSize size) async {
+    if (_cardSize == size) return;
+    setState(() => _cardSize = size);
+    final preferences = await SharedPreferences.getInstance();
+    await preferences.setString(_cardSizePreference, size.name);
   }
 
   Future<void> _selectLayout(_KitchenLayout layout) async {
@@ -555,11 +614,6 @@ class _KitchenPosScreenState extends ConsumerState<KitchenPosScreen> {
   }
 
   void _resetOrder() {
-    final defaultService = ref
-        .read(orderTypeSettingsProvider)
-        .apply()
-        .firstOrNull
-        ?.code;
     setState(() {
       _lines.clear();
       _activeOrder = null;
@@ -568,8 +622,8 @@ class _KitchenPosScreenState extends ConsumerState<KitchenPosScreen> {
       _offlineDraftClientId = null;
       _tableId = null;
       _waiterId = null;
-      _serviceTypeId = null;
-      _service = defaultService ?? 'Takeaway';
+      _savedServiceTypeId = null;
+      _selectedService = null;
       _guests = 1;
       _note = '';
       _grossDiscount = 0;
@@ -723,14 +777,21 @@ class _KitchenPosScreenState extends ConsumerState<KitchenPosScreen> {
     }
     final register = await _requireOpenRegister(locationId);
     if (register == null || !mounted) return;
-    final methods = store.checkoutPaymentOptions
-        .where((option) {
-          final code = option.code.toLowerCase().trim();
-          return code == 'cash' || code == 'card' || code == 'card_payment';
-        })
-        .toList(growable: false);
+    final methods = ref
+        .read(paymentMethodSettingsProvider)
+        .apply(
+          ref
+              .read(appStoreProvider)
+              .checkoutPaymentOptions
+              .where((option) {
+                // Bill & Pay settles the order. Create Bill handles unpaid orders.
+                final code = option.code.trim().toLowerCase();
+                return code.isNotEmpty && code != 'due' && code != 'credit';
+              })
+              .toList(growable: false),
+        );
     if (methods.isEmpty) {
-      _show('Cash or card payment is not configured for this location.');
+      _show('No payment methods are enabled for this location.');
       return;
     }
     final method = await showDialog<PaymentOption>(
@@ -1555,11 +1616,13 @@ class _KitchenPosScreenState extends ConsumerState<KitchenPosScreen> {
           : null;
       _tableId = order.tableId.isEmpty ? null : order.tableId;
       _waiterId = order.waiterId.isEmpty ? null : order.waiterId;
-      _serviceTypeId = order.serviceTypeId.isEmpty ? null : order.serviceTypeId;
+      _savedServiceTypeId = order.serviceTypeId.isEmpty
+          ? null
+          : order.serviceTypeId;
       final enabledServices = ref.read(orderTypeSettingsProvider).apply();
-      _service = enabledServices.any((item) => item.code == service)
+      _selectedService = enabledServices.any((item) => item.code == service)
           ? service
-          : enabledServices.firstOrNull?.code ?? 'Takeaway';
+          : null;
       _guests = int.tryParse(pax?.group(1) ?? '') ?? 1;
       _note = order.saleNote
           .split('·')
@@ -1887,17 +1950,6 @@ class _KitchenPosScreenState extends ConsumerState<KitchenPosScreen> {
   Widget build(BuildContext context) {
     final store = ref.watch(appStoreProvider);
     final orderTypes = ref.watch(orderTypeSettingsProvider).apply();
-    if (orderTypes.isNotEmpty &&
-        !orderTypes.any((item) => item.code == _service)) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!mounted) return;
-        setState(() {
-          _service = orderTypes.first.code;
-          _serviceTypeId = null;
-          if (_service != 'Dine in') _tableId = null;
-        });
-      });
-    }
     final products = _visible(store);
     final width = MediaQuery.sizeOf(context).width;
     final modernDesktop = _modernLayout && width >= 1100;
@@ -2291,7 +2343,7 @@ class _KitchenPosScreenState extends ConsumerState<KitchenPosScreen> {
                   : () => unawaited(_saveDraft()),
             ),
             button(
-              label: 'Kitchen, Bill, Print & Pay',
+              label: 'KOT & Pay',
               icon: Icons.point_of_sale_outlined,
               onPressed: disabled ? null : () => unawaited(_billAndPay()),
               primary: true,
@@ -2303,7 +2355,7 @@ class _KitchenPosScreenState extends ConsumerState<KitchenPosScreen> {
         row([
           button(
             key: const ValueKey('send-to-kitchen'),
-            label: 'Send to Kitchen',
+            label: 'Send KOT',
             icon: Icons.soup_kitchen_rounded,
             onPressed: disabled ? null : _sendToKitchen,
           ),
@@ -2315,7 +2367,7 @@ class _KitchenPosScreenState extends ConsumerState<KitchenPosScreen> {
                 : _printAndHoldKitchenOrder,
           ),
           button(
-            label: 'Kitchen & Print',
+            label: 'KOT & Print',
             icon: Icons.print_outlined,
             onPressed: disabled ? null : _sendToKitchenAndPrint,
           ),
@@ -2356,7 +2408,16 @@ class _KitchenPosScreenState extends ConsumerState<KitchenPosScreen> {
   ) {
     final store = ref.watch(appStoreProvider);
     final customer = _customer(store);
-    final title = Row(
+    final controls = Wrap(
+      spacing: 6,
+      runSpacing: 6,
+      children: [
+        _orderTypeDropdown(orderTypes),
+        if (_service == 'Dine in') _tableCard(restaurant?.tables ?? const []),
+        _customerButton(store, customer),
+      ],
+    );
+    Widget title({required bool inlineControls}) => Row(
       children: [
         const Icon(Icons.soup_kitchen_rounded, color: Colors.white, size: 25),
         const SizedBox(width: 8),
@@ -2372,6 +2433,7 @@ class _KitchenPosScreenState extends ConsumerState<KitchenPosScreen> {
             ),
           ),
         ),
+        if (inlineControls) ...[controls, const SizedBox(width: 10)],
         PopupMenuButton<_KitchenLayout>(
           key: const ValueKey('kitchen-layout-switcher'),
           tooltip: 'Kitchen POS layout',
@@ -2462,84 +2524,6 @@ class _KitchenPosScreenState extends ConsumerState<KitchenPosScreen> {
         ],
       ],
     );
-    final classicControls = SingleChildScrollView(
-      scrollDirection: Axis.horizontal,
-      child: Row(
-        children: [
-          _customerButton(store, customer),
-          const SizedBox(width: 6),
-          for (final option in orderTypes) ...[
-            SizedBox(
-              width: 112,
-              child: _mobileServiceButton(
-                option,
-                restaurant?.serviceTypes ?? const [],
-              ),
-            ),
-            const SizedBox(width: 6),
-          ],
-          if (_service == 'Dine in') ...[
-            _tableCard(restaurant?.tables ?? const []),
-            const SizedBox(width: 6),
-          ],
-          _guestCard(),
-          _waiterCard(restaurant?.staff ?? const []),
-        ],
-      ),
-    );
-    final modernControls = SingleChildScrollView(
-      scrollDirection: Axis.horizontal,
-      child: Row(
-        children: [
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10),
-            height: 36,
-            alignment: Alignment.center,
-            decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: .10),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: const Row(
-              children: [
-                Icon(
-                  Icons.receipt_long_outlined,
-                  size: 16,
-                  color: Colors.white70,
-                ),
-                SizedBox(width: 6),
-                Text(
-                  'Order details',
-                  style: TextStyle(
-                    color: Colors.white70,
-                    fontSize: 12,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(width: 8),
-          for (final option in orderTypes) ...[
-            SizedBox(
-              width: 112,
-              child: _mobileServiceButton(
-                option,
-                restaurant?.serviceTypes ?? const [],
-              ),
-            ),
-            const SizedBox(width: 6),
-          ],
-          if (_service == 'Dine in') ...[
-            _tableCard(restaurant?.tables ?? const []),
-            const SizedBox(width: 6),
-          ],
-          _customerButton(store, customer),
-          const SizedBox(width: 6),
-          _guestCard(),
-          _waiterCard(restaurant?.staff ?? const []),
-        ],
-      ),
-    );
     return Container(
       margin: EdgeInsets.fromLTRB(desktop ? 10 : 8, 6, desktop ? 10 : 8, 0),
       padding: EdgeInsets.symmetric(
@@ -2550,56 +2534,19 @@ class _KitchenPosScreenState extends ConsumerState<KitchenPosScreen> {
         color: AppColors.primaryDark,
         borderRadius: BorderRadius.circular(8),
       ),
-      child: desktop && _modernLayout
-          ? Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [title, const SizedBox(height: 7), modernControls],
-            )
-          : desktop
-          ? Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [title, const SizedBox(height: 7), classicControls],
-            )
-          : Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(children: [Expanded(child: title)]),
-                const SizedBox(height: 4),
-                Row(
-                  children: [
-                    for (var index = 0; index < orderTypes.length; index++) ...[
-                      if (index > 0) const SizedBox(width: 5),
-                      Expanded(
-                        child: _mobileServiceButton(
-                          orderTypes[index],
-                          restaurant?.serviceTypes ?? const [],
-                        ),
-                      ),
-                    ],
-                  ],
-                ),
-                if (_service == 'Dine in') ...[
-                  const SizedBox(height: 6),
-                  _tableCard(restaurant?.tables ?? const [], mobile: true),
-                ],
-                const SizedBox(height: 6),
-                Row(
-                  children: [
-                    Expanded(child: _guestCard(mobile: true)),
-                    const SizedBox(width: 6),
-                    Expanded(
-                      flex: 2,
-                      child: _waiterCard(
-                        restaurant?.staff ?? const [],
-                        mobile: true,
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 6),
-                _customerButton(store, customer, mobile: true),
-              ],
-            ),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          if (constraints.maxWidth >= 1000) return title(inlineControls: true);
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              title(inlineControls: false),
+              const SizedBox(height: 6),
+              controls,
+            ],
+          );
+        },
+      ),
     );
   }
 
@@ -2652,44 +2599,50 @@ class _KitchenPosScreenState extends ConsumerState<KitchenPosScreen> {
     ),
   );
 
-  void _selectService(String label, List<LookupOption> serviceTypes) {
-    String? matchedId;
-    final lookup = label.toLowerCase().replaceAll(' ', '');
-    for (final option in serviceTypes) {
-      final name = option.name.toLowerCase().replaceAll(' ', '');
-      if (name.contains(lookup) || lookup.contains(name)) {
-        matchedId = option.id;
-        break;
-      }
-    }
+  void _selectService(String label) {
+    if (label == _service) return;
     setState(() {
-      _service = label;
-      _serviceTypeId = matchedId;
+      _selectedService = label;
+      _savedServiceTypeId = null;
       if (label != 'Dine in') _tableId = null;
     });
   }
 
-  Widget _mobileServiceButton(
-    PosOrderType option,
-    List<LookupOption> serviceTypes,
-  ) {
-    final selected = _service == option.code;
-    return OutlinedButton(
-      onPressed: _orderLocked
-          ? null
-          : () => _selectService(option.code, serviceTypes),
-      style: OutlinedButton.styleFrom(
-        backgroundColor: selected ? AppColors.primary : Colors.white,
-        foregroundColor: selected ? Colors.white : AppColors.ink,
-        side: BorderSide(color: selected ? Colors.white : _border),
-        minimumSize: const Size(0, 38),
-        padding: const EdgeInsets.symmetric(horizontal: 2),
-        visualDensity: VisualDensity.compact,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+  Widget _orderTypeDropdown(List<PosOrderType> orderTypes) => Container(
+    width: 146,
+    height: 36,
+    padding: const EdgeInsets.symmetric(horizontal: 9),
+    decoration: BoxDecoration(
+      color: Colors.white,
+      border: Border.all(color: _border),
+      borderRadius: BorderRadius.circular(6),
+    ),
+    child: DropdownButtonHideUnderline(
+      child: DropdownButton<String>(
+        key: const ValueKey('kitchen-order-type'),
+        isExpanded: true,
+        isDense: true,
+        value: orderTypes.isEmpty ? null : _service,
+        hint: const Text('Order type'),
+        items: [
+          for (final option in orderTypes)
+            DropdownMenuItem(
+              value: option.code,
+              child: Text(
+                option.label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+        ],
+        onChanged: _orderLocked
+            ? null
+            : (code) {
+                if (code != null) _selectService(code);
+              },
       ),
-      child: Text(option.label, maxLines: 1, overflow: TextOverflow.ellipsis),
-    );
-  }
+    ),
+  );
 
   Widget _tableCard(List<RestaurantTable> tables, {bool mobile = false}) =>
       Container(
@@ -2736,118 +2689,6 @@ class _KitchenPosScreenState extends ConsumerState<KitchenPosScreen> {
                   onChanged: _orderLocked
                       ? null
                       : (value) => setState(() => _tableId = value),
-                ),
-              ),
-            ),
-          ],
-        ),
-      );
-
-  Widget _guestCard({bool mobile = false}) => Container(
-    width: mobile ? null : 112,
-    height: mobile ? 44 : 36,
-    margin: EdgeInsets.only(right: mobile ? 0 : 6),
-    padding: const EdgeInsets.symmetric(horizontal: 4),
-    decoration: BoxDecoration(
-      color: Colors.white,
-      border: Border.all(color: _border),
-      borderRadius: BorderRadius.circular(6),
-    ),
-    child: Row(
-      children: [
-        const Icon(Icons.groups_2_outlined, size: 17, color: AppColors.ink),
-        IconButton(
-          tooltip: 'Remove guest',
-          onPressed: _orderLocked || _guests <= 1
-              ? null
-              : () => setState(() => _guests--),
-          icon: const Icon(Icons.remove, size: 15),
-          color: AppColors.ink,
-          disabledColor: const Color(0xFF9AA5A2),
-          constraints: const BoxConstraints.tightFor(width: 25, height: 34),
-          padding: EdgeInsets.zero,
-          visualDensity: VisualDensity.compact,
-          style: IconButton.styleFrom(
-            minimumSize: const Size(25, 34),
-            maximumSize: const Size(25, 34),
-            padding: EdgeInsets.zero,
-            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-          ),
-        ),
-        Expanded(
-          child: Text(
-            '$_guests',
-            key: const ValueKey('kitchen-guest-count'),
-            textAlign: TextAlign.center,
-            style: const TextStyle(
-              color: AppColors.ink,
-              fontWeight: FontWeight.w800,
-            ),
-          ),
-        ),
-        IconButton(
-          tooltip: 'Add guest',
-          onPressed: _orderLocked || _guests >= 99
-              ? null
-              : () => setState(() => _guests++),
-          icon: const Icon(Icons.add, size: 15),
-          color: AppColors.ink,
-          disabledColor: const Color(0xFF9AA5A2),
-          constraints: const BoxConstraints.tightFor(width: 25, height: 34),
-          padding: EdgeInsets.zero,
-          visualDensity: VisualDensity.compact,
-          style: IconButton.styleFrom(
-            minimumSize: const Size(25, 34),
-            maximumSize: const Size(25, 34),
-            padding: EdgeInsets.zero,
-            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-          ),
-        ),
-      ],
-    ),
-  );
-
-  Widget _waiterCard(List<LookupOption> staff, {bool mobile = false}) =>
-      Container(
-        width: mobile ? null : 170,
-        height: mobile ? 44 : 36,
-        margin: EdgeInsets.only(right: mobile ? 0 : 6),
-        padding: const EdgeInsets.symmetric(horizontal: 8),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          border: Border.all(color: _border),
-          borderRadius: BorderRadius.circular(6),
-        ),
-        child: Row(
-          children: [
-            const Icon(Icons.badge_outlined, size: 17),
-            const SizedBox(width: 6),
-            Expanded(
-              child: DropdownButtonHideUnderline(
-                child: DropdownButton<String?>(
-                  value: staff.any((item) => item.id == _waiterId)
-                      ? _waiterId
-                      : null,
-                  isExpanded: true,
-                  hint: const Text('Waiter'),
-                  items: [
-                    const DropdownMenuItem<String?>(
-                      value: null,
-                      child: Text('No waiter'),
-                    ),
-                    for (final member in staff)
-                      DropdownMenuItem<String?>(
-                        value: member.id,
-                        child: Text(
-                          member.name,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                  ],
-                  onChanged: _orderLocked
-                      ? null
-                      : (value) => setState(() => _waiterId = value),
                 ),
               ),
             ),
@@ -2946,6 +2787,26 @@ class _KitchenPosScreenState extends ConsumerState<KitchenPosScreen> {
                 ),
                 const SizedBox(width: 6),
               ],
+              const SizedBox(width: 4),
+              PopupMenuButton<_KitchenCardSize>(
+                key: const ValueKey('kitchen-card-size'),
+                tooltip: context.tr('Product card size'),
+                initialValue: _cardSize,
+                onSelected: (size) => unawaited(_selectCardSize(size)),
+                icon: Icon(
+                  Icons.grid_view_rounded,
+                  color: wide ? _desktopText : AppColors.ink,
+                ),
+                itemBuilder: (_) => [
+                  for (final size in _KitchenCardSize.values)
+                    CheckedPopupMenuItem(
+                      key: ValueKey('kitchen-card-size-${size.name}'),
+                      value: size,
+                      checked: size == _cardSize,
+                      child: Text(size.label),
+                    ),
+                ],
+              ),
               if (MediaQuery.sizeOf(context).width < 600) ...[
                 const SizedBox(width: 6),
                 OutlinedButton(
@@ -3207,10 +3068,18 @@ class _KitchenPosScreenState extends ConsumerState<KitchenPosScreen> {
     if (products.isEmpty) {
       return const Center(child: Text('No items match this filter.'));
     }
+    final showImages = ref.watch(productCardImagesProvider)['kitchen'] == true;
+    final scale = _cardSize.scale;
+    final fontSize = 13 * scale;
+    final spacing = 6 * scale;
+    final scaledFontSize = MediaQuery.textScalerOf(context).scale(fontSize);
+    final height =
+        (showImages ? 142 : 82) * scale +
+        max(0.0, scaledFontSize - fontSize) * 5;
     return LayoutBuilder(
       builder: (context, constraints) {
         final desktop = _useModernDesktop(context);
-        final columns = constraints.maxWidth >= 1120
+        final standardColumns = constraints.maxWidth >= 1120
             ? 8
             : constraints.maxWidth >= 800
             ? 6
@@ -3221,16 +3090,14 @@ class _KitchenPosScreenState extends ConsumerState<KitchenPosScreen> {
             : constraints.maxWidth >= 220
             ? 2
             : 1;
+        final columns = max(1, (standardColumns / scale).round());
         return GridView.builder(
           itemCount: products.length,
           gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
             crossAxisCount: columns,
-            mainAxisExtent:
-                ref.watch(productCardImagesProvider)['kitchen'] == true
-                ? 142
-                : 82,
-            crossAxisSpacing: 6,
-            mainAxisSpacing: 6,
+            mainAxisExtent: height,
+            crossAxisSpacing: spacing,
+            mainAxisSpacing: spacing,
           ),
           itemBuilder: (_, index) {
             final product = products[index];
@@ -3246,7 +3113,7 @@ class _KitchenPosScreenState extends ConsumerState<KitchenPosScreen> {
                   ? _desktopSurfaceRaised
                   : _productBackgrounds[paletteIndex],
               shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(7),
+                borderRadius: BorderRadius.circular(7 * scale),
                 side: BorderSide(
                   color: desktop
                       ? _desktopBorder
@@ -3255,18 +3122,17 @@ class _KitchenPosScreenState extends ConsumerState<KitchenPosScreen> {
               ),
               child: InkWell(
                 key: ValueKey('kitchen-product-${product.id}'),
-                borderRadius: BorderRadius.circular(7),
+                borderRadius: BorderRadius.circular(7 * scale),
                 onTap: _orderLocked ? null : () => _add(product),
                 child: Padding(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 7,
-                    vertical: 6,
+                  padding: EdgeInsets.symmetric(
+                    horizontal: 7 * scale,
+                    vertical: spacing,
                   ),
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      if (ref.watch(productCardImagesProvider)['kitchen'] ==
-                          true) ...[
+                      if (showImages) ...[
                         Expanded(
                           child: ProductImage(
                             product.imageUrl,
@@ -3274,7 +3140,7 @@ class _KitchenPosScreenState extends ConsumerState<KitchenPosScreen> {
                             fit: BoxFit.contain,
                           ),
                         ),
-                        const SizedBox(height: 6),
+                        SizedBox(height: spacing),
                       ],
                       Text(
                         product.displayName(
@@ -3285,16 +3151,16 @@ class _KitchenPosScreenState extends ConsumerState<KitchenPosScreen> {
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(
                           color: desktop ? _desktopText : AppColors.ink,
-                          fontSize: 13,
+                          fontSize: fontSize,
                           fontWeight: FontWeight.w800,
                         ),
                       ),
-                      const SizedBox(height: 3),
+                      SizedBox(height: 3 * scale),
                       RiyalAmount(
                         product.sellingPrice,
                         style: TextStyle(
                           color: desktop ? _desktopAccent : AppColors.primary,
-                          fontSize: 13,
+                          fontSize: fontSize,
                           fontWeight: FontWeight.w800,
                         ),
                       ),
@@ -3601,7 +3467,7 @@ class _KitchenPosScreenState extends ConsumerState<KitchenPosScreen> {
             ),
             action(
               key: const ValueKey('send-to-kitchen'),
-              label: 'Kitchen',
+              label: 'Send KOT',
               icon: Icons.soup_kitchen_rounded,
               onPressed: disabled ? null : _sendToKitchen,
               filled: true,
@@ -3617,12 +3483,12 @@ class _KitchenPosScreenState extends ConsumerState<KitchenPosScreen> {
           const SizedBox(height: 5),
           actionRow([
             action(
-              label: 'Kitchen & Print',
+              label: 'KOT & Print',
               icon: Icons.print_outlined,
               onPressed: disabled ? null : _sendToKitchenAndPrint,
             ),
             action(
-              label: 'Bill & Pay',
+              label: 'KOT & Pay',
               icon: Icons.payments_outlined,
               onPressed: disabled ? null : () => unawaited(_billAndPay()),
               filled: true,
@@ -3661,7 +3527,7 @@ class _KitchenPosScreenState extends ConsumerState<KitchenPosScreen> {
             ),
           action(
             key: const ValueKey('send-to-kitchen'),
-            label: 'Kitchen',
+            label: 'Send KOT',
             icon: Icons.soup_kitchen_rounded,
             onPressed: disabled ? null : _sendToKitchen,
             filled: true,
@@ -3674,12 +3540,12 @@ class _KitchenPosScreenState extends ConsumerState<KitchenPosScreen> {
                 : _printAndHoldKitchenOrder,
           ),
           action(
-            label: 'Kitchen & Print',
+            label: 'KOT & Print',
             icon: Icons.print_outlined,
             onPressed: disabled ? null : _sendToKitchenAndPrint,
           ),
           action(
-            label: 'Kitchen, Bill, Print & Pay',
+            label: 'KOT & Pay',
             icon: Icons.point_of_sale_outlined,
             onPressed: disabled ? null : () => unawaited(_billAndPay()),
             filled: true,

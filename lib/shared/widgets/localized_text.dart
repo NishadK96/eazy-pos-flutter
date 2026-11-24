@@ -134,7 +134,7 @@ class Text extends material.StatelessWidget {
   ) {
     if (!context.isArabic) return source;
     return (source ?? const material.TextStyle()).copyWith(
-      fontFamily: 'NotoSansArabic',
+      fontFamily: 'NotoKufiArabic',
       fontFamilyFallback: const ['NotoSans'],
     );
   }

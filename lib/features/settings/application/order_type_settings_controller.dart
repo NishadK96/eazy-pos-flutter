@@ -24,11 +24,21 @@ class OrderTypeSettings {
     this.disabledCodes = const {},
     this.order = const [],
     this.labels = const {},
+    this.kitchenDefaultCode,
   });
 
   final Set<String> disabledCodes;
   final List<String> order;
   final Map<String, String> labels;
+  final String? kitchenDefaultCode;
+
+  String get kitchenDefault {
+    final enabled = apply();
+    for (final code in [kitchenDefaultCode, 'Takeaway']) {
+      if (enabled.any((option) => option.code == code)) return code!;
+    }
+    return enabled.firstOrNull?.code ?? 'Takeaway';
+  }
 
   List<PosOrderType> apply([
     List<PosOrderType> options = defaultPosOrderTypes,
@@ -55,16 +65,19 @@ class OrderTypeSettings {
     Set<String>? disabledCodes,
     List<String>? order,
     Map<String, String>? labels,
+    String? kitchenDefaultCode,
   }) => OrderTypeSettings(
     disabledCodes: disabledCodes ?? this.disabledCodes,
     order: order ?? this.order,
     labels: labels ?? this.labels,
+    kitchenDefaultCode: kitchenDefaultCode ?? this.kitchenDefaultCode,
   );
 
   Map<String, Object> toJson() => {
     'disabled_codes': disabledCodes.toList(),
     'order': order,
     'labels': labels,
+    if (kitchenDefaultCode != null) 'kitchen_default_code': kitchenDefaultCode!,
   };
 
   factory OrderTypeSettings.fromJson(Map<String, dynamic> json) =>
@@ -78,6 +91,7 @@ class OrderTypeSettings {
         labels: (json['labels'] as Map? ?? const {}).map(
           (key, value) => MapEntry(key.toString(), value.toString()),
         ),
+        kitchenDefaultCode: json['kitchen_default_code']?.toString(),
       );
 }
 
@@ -105,6 +119,11 @@ class OrderTypeSettingsController extends Notifier<OrderTypeSettings> {
   }
 
   Future<void> restore() => _restore(_version);
+
+  Future<void> setKitchenDefault(String code) async {
+    if (!state.apply().any((option) => option.code == code)) return;
+    await _save(state.copyWith(kitchenDefaultCode: code));
+  }
 
   Future<void> setEnabled(String code, bool enabled) async {
     final disabled = {...state.disabledCodes};

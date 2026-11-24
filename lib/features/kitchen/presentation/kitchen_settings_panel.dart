@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:pdf/pdf.dart';
 import 'package:printing/printing.dart';
 
+import '../../../core/utils/arabic_print_font.dart';
 import '../../../shared/models/entities.dart';
 import '../../../shared/widgets/localized_text.dart';
 import '../../printers/application/printer_controller.dart';
@@ -1045,7 +1046,7 @@ Future<Uint8List> _offlineKitchenPdf({String? businessName}) async {
   if (info.canConvertHtml) {
     // ignore: deprecated_member_use
     return Printing.convertHtml(
-      html: html,
+      html: await embedArabicPrintFont(html),
       format: PrinterDocumentService.kitchenFormat('offline_demo'),
     );
   }

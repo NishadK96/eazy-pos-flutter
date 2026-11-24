@@ -19,10 +19,10 @@ abstract final class PdfFonts {
       await rootBundle.load('assets/fonts/NotoSans-Bold.ttf'),
     );
     final arabicRegular = pw.Font.ttf(
-      await rootBundle.load('assets/fonts/NotoSansArabic-Regular.ttf'),
+      await rootBundle.load('assets/fonts/NotoKufiArabic-Regular.ttf'),
     );
     final arabicBold = pw.Font.ttf(
-      await rootBundle.load('assets/fonts/NotoSansArabic-Bold.ttf'),
+      await rootBundle.load('assets/fonts/NotoKufiArabic-Bold.ttf'),
     );
     _latinRegular = regular;
     _latinBold = bold;

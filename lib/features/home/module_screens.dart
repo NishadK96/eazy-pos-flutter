@@ -7048,6 +7048,26 @@ class _OrderTypeSettingsDialog extends ConsumerWidget {
               style: const TextStyle(color: AppColors.muted),
             ),
             const SizedBox(height: 12),
+            if (enabledCount > 0) ...[
+              Text(context.tr('Default Kitchen POS order type')),
+              DropdownButton<String>(
+                isExpanded: true,
+                value: settings.kitchenDefault,
+                items: [
+                  for (final option in settings.apply())
+                    DropdownMenuItem(
+                      value: option.code,
+                      child: Text(context.tr(option.label)),
+                    ),
+                ],
+                onChanged: (code) {
+                  if (code != null) {
+                    ref.read(orderTypeSettingsProvider.notifier)
+                        .setKitchenDefault(code);
+                  }
+                },
+              ),
+            ],
             for (var index = 0; index < ordered.length; index++) ...[
               if (index > 0) const Divider(height: 1),
               Builder(

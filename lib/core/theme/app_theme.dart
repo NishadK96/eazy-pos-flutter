@@ -29,7 +29,7 @@ ThemeData buildTheme({bool compact = false}) {
     colorScheme: scheme,
     scaffoldBackgroundColor: AppColors.canvas,
     fontFamily: 'NotoSans',
-    fontFamilyFallback: const ['NotoSansArabic'],
+    fontFamilyFallback: const ['NotoKufiArabic'],
     visualDensity: compact
         ? const VisualDensity(horizontal: -2, vertical: -2)
         : VisualDensity.compact,
