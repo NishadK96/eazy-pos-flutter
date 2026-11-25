@@ -4086,13 +4086,13 @@ class Api {
       taxId: productTax['id']?.toString() ?? json['tax']?.toString() ?? '',
       active: json['is_inactive'] != 1,
       imageUrl: json['image_url']?.toString() ?? '',
-      editDetails: ProductEditDetails(
-        purchasePrice: variation['default_purchase_price'] == null
       modifierGroupsOrderVersion: _number(
         json['modifier_groups_order_version'] ??
             json['modifier_group_order_version'] ??
             1,
       ).round(),
+      editDetails: ProductEditDetails(
+        purchasePrice: variation['default_purchase_price'] == null
             ? null
             : _money(variation['default_purchase_price']),
         purchasePriceIncTax: variation['dpp_inc_tax'] == null
@@ -4148,8 +4148,6 @@ class Api {
               isRequired: _bool(group['is_required']),
               minSelections: _number(group['min_selections']).round(),
               maxSelections: maximum == null ? null : _number(maximum).round(),
-              options: (group['options'] as List? ?? const [])
-                  .whereType<Map>()
               sortOrder: _number(group['sort_order']).round(),
               orderVersion: _number(
                 group['order_version'] ?? group['ordering_version'] ?? 1,
@@ -4159,6 +4157,8 @@ class Api {
                     group['option_order_version'] ??
                     1,
               ).round(),
+              options: (group['options'] as List? ?? const [])
+                  .whereType<Map>()
                   .map((rawOption) {
                     final option = Map<String, dynamic>.from(rawOption);
                     return ModifierOption(
@@ -4175,9 +4175,9 @@ class Api {
                         option['price_includes_tax'],
                         fallback: true,
                       ),
+                      sortOrder: _number(option['sort_order']).round(),
                     );
                   })
-                      sortOrder: _number(option['sort_order']).round(),
                   .toList(growable: false),
             );
           })
