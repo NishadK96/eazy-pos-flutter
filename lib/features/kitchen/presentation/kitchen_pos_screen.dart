@@ -763,6 +763,27 @@ class _KitchenPosScreenState extends ConsumerState<KitchenPosScreen> {
     }
   }
 
+  Future<void> _processKitchenPrintingInBackground(
+    String transactionId,
+    String locationId,
+  ) async {
+    try {
+      final summary = await ref
+          .read(kitchenPrintingControllerProvider.notifier)
+          .processTransaction(transactionId, locationId: locationId);
+      if (mounted) {
+        _show('${summary.printedCount} kitchen ticket(s) printed.');
+      }
+    } catch (error) {
+      debugPrint('Kitchen printing needs attention: $error');
+      if (mounted) {
+        _show(
+          'Order #$transactionId is paid and saved, but no kitchen ticket was printed. Retry it from Kitchen orders.',
+        );
+      }
+    }
+  }
+
   Future<void> _billAndPay({
     bool sendToKitchen = true,
     bool printCustomerBill = true,
@@ -865,17 +886,12 @@ class _KitchenPosScreenState extends ConsumerState<KitchenPosScreen> {
               paymentMethod: method.code,
             );
       }
-      String? kitchenPrintingWarning;
+      // Kitchen job generation can involve several backend requests and must
+      // not hold up the customer receipt after payment has succeeded.
       if (sendToKitchen) {
-        try {
-          await ref
-              .read(kitchenPrintingControllerProvider.notifier)
-              .processTransaction(transactionId, locationId: locationId);
-        } catch (error) {
-          kitchenPrintingWarning =
-              'No kitchen ticket was printed. Configure an active category printer route in Printer settings, then retry printing from Kitchen orders.';
-          debugPrint('Kitchen printing needs attention: $error');
-        }
+        unawaited(
+          _processKitchenPrintingInBackground(transactionId, locationId),
+        );
       }
       if (!mounted) return;
       if (printCustomerBill) {
@@ -885,11 +901,9 @@ class _KitchenPosScreenState extends ConsumerState<KitchenPosScreen> {
       ref.invalidate(kitchenOrdersProvider(locationId));
       _resetOrder();
       _show(
-        kitchenPrintingWarning == null
-            ? sendToKitchen
-                  ? 'Order #$transactionId paid, completed and sent to the kitchen printer.'
-                  : 'Order #$transactionId billed and paid.'
-            : 'Order #$transactionId is paid and saved. $kitchenPrintingWarning',
+        sendToKitchen
+            ? 'Order #$transactionId paid. Receipt sent to the billing printer; kitchen printing is continuing.'
+            : 'Order #$transactionId billed and paid.',
       );
     } on ApiException catch (error) {
       if (!mounted) return;
