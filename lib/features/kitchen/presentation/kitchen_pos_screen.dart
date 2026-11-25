@@ -150,6 +150,222 @@ class _KitchenResizeHandle extends StatelessWidget {
   );
 }
 
+class _KitchenCategoryOrderDialog extends StatefulWidget {
+  const _KitchenCategoryOrderDialog({
+    required this.categories,
+    required this.dark,
+  });
+
+  final List<Category> categories;
+  final bool dark;
+
+  @override
+  State<_KitchenCategoryOrderDialog> createState() =>
+      _KitchenCategoryOrderDialogState();
+}
+
+class _KitchenCategoryOrderDialogState
+    extends State<_KitchenCategoryOrderDialog> {
+  late final List<Category> _items = [...widget.categories];
+
+  void _move(int oldIndex, int newIndex) {
+    final target = newIndex > oldIndex ? newIndex - 1 : newIndex;
+    if (target == oldIndex) return;
+    setState(() => _items.insert(target, _items.removeAt(oldIndex)));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final dark = widget.dark;
+    final colors = dark
+        ? const ColorScheme.dark(
+            surface: Color(0xFF10232D),
+            onSurface: Colors.white,
+            onSurfaceVariant: Color(0xFFA8B7BE),
+            primary: Color(0xFF2BC5A0),
+            onPrimary: Color(0xFF092820),
+          )
+        : Theme.of(context).colorScheme;
+    final card = dark ? const Color(0xFF172C37) : const Color(0xFFF5F9F8);
+    final border = dark ? const Color(0xFF314752) : const Color(0xFFDCE5E2);
+    final changed = _items.asMap().entries.any(
+      (entry) => entry.value.id != widget.categories[entry.key].id,
+    );
+    final arabic = Localizations.localeOf(context).languageCode == 'ar';
+    return Theme(
+      data: Theme.of(context).copyWith(colorScheme: colors),
+      child: AlertDialog(
+        backgroundColor: colors.surface,
+        surfaceTintColor: Colors.transparent,
+        insetPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 16),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+          side: BorderSide(color: border),
+        ),
+        titlePadding: const EdgeInsets.fromLTRB(18, 16, 18, 10),
+        contentPadding: const EdgeInsets.symmetric(horizontal: 18),
+        actionsPadding: const EdgeInsets.fromLTRB(18, 10, 18, 14),
+        title: Row(
+          children: [
+            Icon(Icons.reorder_rounded, color: colors.primary),
+            const SizedBox(width: 9),
+            Expanded(
+              child: Text(
+                'Reorder kitchen categories',
+                style: TextStyle(
+                  fontSize: 19,
+                  fontWeight: FontWeight.w800,
+                  color: colors.onSurface,
+                ),
+              ),
+            ),
+          ],
+        ),
+        content: SizedBox(
+          width: 460,
+          height: min(370, MediaQuery.sizeOf(context).height * .48),
+          child: Column(
+            children: [
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 8,
+                ),
+                decoration: BoxDecoration(
+                  color: colors.primary.withValues(alpha: .12),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Row(
+                  children: [
+                    Icon(Icons.drag_indicator_rounded, color: colors.primary),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'Drag the dotted handle up or down, or use the arrows. Then select Save order.',
+                        style: TextStyle(fontSize: 12, color: colors.onSurface),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 8),
+              Expanded(
+                child: ReorderableListView.builder(
+                  buildDefaultDragHandles: false,
+                  itemCount: _items.length,
+                  onReorder: _move,
+                  itemBuilder: (_, index) {
+                    final category = _items[index];
+                    final name = arabic && category.nameAr.trim().isNotEmpty
+                        ? category.nameAr
+                        : !arabic && category.nameEn.trim().isNotEmpty
+                        ? category.nameEn
+                        : category.name;
+                    return Container(
+                      key: ValueKey(category.id),
+                      margin: const EdgeInsets.only(bottom: 5),
+                      padding: const EdgeInsets.symmetric(horizontal: 4),
+                      decoration: BoxDecoration(
+                        color: card,
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: border),
+                      ),
+                      child: Row(
+                        children: [
+                          ReorderableDragStartListener(
+                            index: index,
+                            child: MouseRegion(
+                              cursor: SystemMouseCursors.grab,
+                              child: Tooltip(
+                                message: context.tr('Drag to reorder'),
+                                child: SizedBox.square(
+                                  dimension: 40,
+                                  child: Icon(
+                                    Icons.drag_indicator_rounded,
+                                    color: colors.primary,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                          SizedBox(
+                            width: 27,
+                            child: Text(
+                              '${index + 1}',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: colors.onSurfaceVariant,
+                              ),
+                            ),
+                          ),
+                          Expanded(
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(vertical: 6),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    name,
+                                    maxLines: 2,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: TextStyle(
+                                      fontSize: 14,
+                                      fontWeight: FontWeight.w700,
+                                      color: colors.onSurface,
+                                    ),
+                                  ),
+                                  if (!category.active)
+                                    Text(
+                                      'Inactive',
+                                      style: TextStyle(
+                                        fontSize: 11,
+                                        color: colors.onSurfaceVariant,
+                                      ),
+                                    ),
+                                ],
+                              ),
+                            ),
+                          ),
+                          IconButton(
+                            tooltip: context.tr('Move up'),
+                            onPressed: index == 0
+                                ? null
+                                : () => _move(index, index - 1),
+                            icon: const Icon(Icons.keyboard_arrow_up),
+                          ),
+                          IconButton(
+                            tooltip: context.tr('Move down'),
+                            onPressed: index == _items.length - 1
+                                ? null
+                                : () => _move(index, index + 2),
+                            icon: const Icon(Icons.keyboard_arrow_down),
+                          ),
+                        ],
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          FilledButton.icon(
+            onPressed: changed ? () => Navigator.pop(context, _items) : null,
+            icon: const Icon(Icons.check_rounded, size: 18),
+            label: const Text('Save order'),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 enum _KitchenLayout { modern, light, classic }
 
 enum _KitchenCardSize {
@@ -265,6 +481,7 @@ class _KitchenPosScreenState extends ConsumerState<KitchenPosScreen> {
   bool get _lightLayout => _layout == _KitchenLayout.light;
   Color get _desktopText => _lightLayout ? AppColors.ink : Colors.white;
   bool _sending = false;
+  bool _savingCategoryOrder = false;
   double _classicOrderPanelWidth = 360;
   double _categoryPanelWidth = 148;
   String? _pendingClientTransactionId;
@@ -2801,6 +3018,31 @@ class _KitchenPosScreenState extends ConsumerState<KitchenPosScreen> {
                 ),
                 const SizedBox(width: 6),
               ],
+              IconButton(
+                key: const ValueKey('kitchen-reorder-categories'),
+                tooltip: 'Reorder categories',
+                onPressed: store.categories.length > 1 && !_savingCategoryOrder
+                    ? () => _showKitchenCategoryOrder(store.categories)
+                    : null,
+                icon: _savingCategoryOrder
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.low_priority_rounded, size: 22),
+                style: IconButton.styleFrom(
+                  backgroundColor: wide
+                      ? _desktopSurfaceRaised
+                      : const Color(0xFFE5F4F0),
+                  foregroundColor: wide
+                      ? const Color(0xFF42D8B4)
+                      : AppColors.primary,
+                  side: BorderSide(
+                    color: wide ? _desktopBorder : const Color(0xFF9BC9BD),
+                  ),
+                ),
+              ),
               const SizedBox(width: 4),
               PopupMenuButton<_KitchenCardSize>(
                 key: const ValueKey('kitchen-card-size'),
@@ -2983,6 +3225,75 @@ class _KitchenPosScreenState extends ConsumerState<KitchenPosScreen> {
         Expanded(child: _productGrid(products, categories)),
       ],
     );
+  }
+
+  Future<void> _showKitchenCategoryOrder(List<Category> categories) async {
+    final ordered = await showDialog<List<Category>>(
+      context: context,
+      builder: (_) => _KitchenCategoryOrderDialog(
+        categories: categories,
+        dark: _layout == _KitchenLayout.modern,
+      ),
+    );
+    if (ordered == null || !mounted) return;
+    final previous = ref.read(appStoreProvider).categories;
+    final expectedVersion = previous.isEmpty ? 1 : previous.first.orderVersion;
+    final optimistic = [
+      for (var index = 0; index < ordered.length; index++)
+        ordered[index].copyWith(sortOrder: index),
+    ];
+    ref.read(appStoreProvider.notifier).replaceCategories(optimistic);
+    setState(() => _savingCategoryOrder = true);
+    try {
+      var token = await ref.read(authControllerProvider.future);
+      if (token == null || token.isEmpty || token == 'offline-local-session') {
+        throw const ApiException(
+          'Category ordering requires an online session.',
+        );
+      }
+      int version;
+      try {
+        version = await ref
+            .read(apiProvider)
+            .reorderCategories(
+              accessToken: token,
+              parentId: null,
+              orderedIds: ordered.map((item) => item.id).toList(),
+              expectedVersion: expectedVersion,
+            );
+      } on ApiException catch (error) {
+        if (error.statusCode != 401) rethrow;
+        token = await ref
+            .read(authControllerProvider.notifier)
+            .refreshAccessToken();
+        version = await ref
+            .read(apiProvider)
+            .reorderCategories(
+              accessToken: token,
+              parentId: null,
+              orderedIds: ordered.map((item) => item.id).toList(),
+              expectedVersion: expectedVersion,
+            );
+      }
+      ref.read(appStoreProvider.notifier).replaceCategories([
+        for (var index = 0; index < ordered.length; index++)
+          ordered[index].copyWith(sortOrder: index, orderVersion: version),
+      ]);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Kitchen category order saved.')),
+        );
+      }
+    } catch (error) {
+      ref.read(appStoreProvider.notifier).replaceCategories(previous);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Could not save category order: $error')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _savingCategoryOrder = false);
+    }
   }
 
   Widget _categoryChip(

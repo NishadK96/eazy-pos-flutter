@@ -1050,6 +1050,10 @@ class Api {
       nameEn: item['name_en']?.toString() ?? '',
       nameAr: item['name_ar']?.toString() ?? '',
       icon: '',
+      sortOrder: _number(item['sort_order']).round(),
+      orderVersion: _number(
+        item['order_version'] ?? item['ordering_version'] ?? 1,
+      ).round(),
       subCategories: (item['sub_categories'] as List? ?? const [])
           .whereType<Map<String, dynamic>>()
           .map(mapCategory)
@@ -1059,6 +1063,27 @@ class Api {
         .whereType<Map<String, dynamic>>()
         .map(mapCategory)
         .toList(growable: false);
+  }
+
+  Future<int> reorderCategories({
+    required String accessToken,
+    required String? parentId,
+    required List<String> orderedIds,
+    required int expectedVersion,
+  }) async {
+    final response = await _client
+        .put(
+          Uri.parse(ApiEndPoints.categoryReorderUrl),
+          headers: _authorizedHeaders(accessToken, json: true),
+          body: jsonEncode({
+            'parent_id': parentId == null ? 0 : int.parse(parentId),
+            'ordered_ids': orderedIds.map(int.parse).toList(),
+            'expected_version': expectedVersion,
+          }),
+        )
+        .timeout(const Duration(seconds: 20));
+    final root = _requireObject(response, 'category order update');
+    return _number(_map(root['data'])['version'] ?? expectedVersion).round();
   }
 
   Future<void> createCategory({
@@ -2232,6 +2257,50 @@ class Api {
         )
         .timeout(const Duration(seconds: 20));
     _requireObject(response, 'product modifier assignment');
+  }
+
+  Future<int> reorderProductModifierGroups({
+    required String accessToken,
+    required String productId,
+    required List<String> orderedGroupIds,
+    required int expectedVersion,
+  }) async {
+    final response = await _client
+        .put(
+          Uri.parse(ApiEndPoints.productModifierGroupsReorderUrl(productId)),
+          headers: _authorizedHeaders(accessToken, json: true),
+          body: jsonEncode({
+            'ordered_modifier_group_ids': orderedGroupIds
+                .map(int.parse)
+                .toList(),
+            'expected_version': expectedVersion,
+          }),
+        )
+        .timeout(const Duration(seconds: 20));
+    final root = _requireObject(response, 'product modifier order update');
+    return _number(_map(root['data'])['version'] ?? expectedVersion).round();
+  }
+
+  Future<int> reorderModifierOptions({
+    required String accessToken,
+    required String groupId,
+    required List<String> orderedVariationIds,
+    required int expectedVersion,
+  }) async {
+    final response = await _client
+        .put(
+          Uri.parse(ApiEndPoints.modifierOptionsReorderUrl(groupId)),
+          headers: _authorizedHeaders(accessToken, json: true),
+          body: jsonEncode({
+            'ordered_variation_ids': orderedVariationIds
+                .map(int.parse)
+                .toList(),
+            'expected_version': expectedVersion,
+          }),
+        )
+        .timeout(const Duration(seconds: 20));
+    final root = _requireObject(response, 'modifier option order update');
+    return _number(_map(root['data'])['version'] ?? expectedVersion).round();
   }
 
   Future<ConnectorAccess> connectorAccess(String accessToken) async {
@@ -4019,6 +4088,11 @@ class Api {
       imageUrl: json['image_url']?.toString() ?? '',
       editDetails: ProductEditDetails(
         purchasePrice: variation['default_purchase_price'] == null
+      modifierGroupsOrderVersion: _number(
+        json['modifier_groups_order_version'] ??
+            json['modifier_group_order_version'] ??
+            1,
+      ).round(),
             ? null
             : _money(variation['default_purchase_price']),
         purchasePriceIncTax: variation['dpp_inc_tax'] == null
@@ -4076,6 +4150,15 @@ class Api {
               maxSelections: maximum == null ? null : _number(maximum).round(),
               options: (group['options'] as List? ?? const [])
                   .whereType<Map>()
+              sortOrder: _number(group['sort_order']).round(),
+              orderVersion: _number(
+                group['order_version'] ?? group['ordering_version'] ?? 1,
+              ).round(),
+              optionsOrderVersion: _number(
+                group['options_order_version'] ??
+                    group['option_order_version'] ??
+                    1,
+              ).round(),
                   .map((rawOption) {
                     final option = Map<String, dynamic>.from(rawOption);
                     return ModifierOption(
@@ -4094,6 +4177,7 @@ class Api {
                       ),
                     );
                   })
+                      sortOrder: _number(option['sort_order']).round(),
                   .toList(growable: false),
             );
           })

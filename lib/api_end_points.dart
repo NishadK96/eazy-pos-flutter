@@ -39,6 +39,7 @@ abstract final class ApiEndPoints {
   static const brandsUrl = '${Config.baseUrl}/connector/api/brand';
   static const categoriesUrl = '${Config.baseUrl}/connector/api/taxonomy';
   static String categoryUrl(String id) => '$categoriesUrl/$id';
+  static const categoryReorderUrl = '$categoriesUrl/reorder';
   static String productUrl(String id) => '$productWritesUrl/$id';
   static String productStatusUrl(String id) => '$productWritesUrl/$id/status';
   static String productImageUrl(String id) => '$productWritesUrl/$id/image';
@@ -69,6 +70,10 @@ abstract final class ApiEndPoints {
   static String modifierGroupUrl(String id) => '$modifierGroupsUrl/$id';
   static String productModifierGroupsUrl(String productId) =>
       '$productWritesUrl/$productId/modifier-groups';
+  static String productModifierGroupsReorderUrl(String productId) =>
+      '${productModifierGroupsUrl(productId)}/reorder';
+  static String modifierOptionsReorderUrl(String groupId) =>
+      '${modifierGroupUrl(groupId)}/options/reorder';
   static String invoiceLayoutPreviewUrl(String layoutId) =>
       '$invoiceLayoutsUrl/$layoutId/preview';
   static String invoiceLayoutOfflineConfigUrl(String layoutId) =>

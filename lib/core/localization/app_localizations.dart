@@ -1888,6 +1888,10 @@ const Map<String, String> _ar = {
       'مبيعات المسار المتنقل من موقع المركبة المحدد',
   'Move down': 'تحريك لأسفل',
   'Move up': 'تحريك لأعلى',
+  'Reorder kitchen categories': 'إعادة ترتيب فئات المطبخ',
+  'Drag to reorder': 'اسحب لإعادة الترتيب',
+  'Drag the dotted handle up or down, or use the arrows. Then select Save order.':
+      'اسحب المقبض المنقّط لأعلى أو لأسفل، أو استخدم الأسهم. ثم اختر حفظ الترتيب.',
   'Mr / Mrs / Miss': 'السيد / السيدة / الآنسة',
   'Net profit': 'صافي الربح',
   'New customer': 'عميل جديد',

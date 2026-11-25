@@ -13,13 +13,32 @@ class Category {
     this.nameEn = '',
     this.nameAr = '',
     this.active = true,
+    this.sortOrder = 0,
+    this.orderVersion = 1,
     this.subCategories = const [],
   });
   final String id, name;
   final String nameEn, nameAr;
   final String icon;
   final bool active;
+  final int sortOrder, orderVersion;
   final List<Category> subCategories;
+
+  Category copyWith({
+    int? sortOrder,
+    int? orderVersion,
+    List<Category>? subCategories,
+  }) => Category(
+    id: id,
+    name: name,
+    icon: icon,
+    nameEn: nameEn,
+    nameAr: nameAr,
+    active: active,
+    sortOrder: sortOrder ?? this.sortOrder,
+    orderVersion: orderVersion ?? this.orderVersion,
+    subCategories: subCategories ?? this.subCategories,
+  );
 }
 
 class Product {
@@ -44,6 +63,7 @@ class Product {
     this.nameEn = '',
     this.nameAr = '',
     this.modifierGroups = const [],
+    this.modifierGroupsOrderVersion = 1,
     this.editDetails,
   });
   final String id,
@@ -63,6 +83,7 @@ class Product {
   final bool sellingPriceIncludesTax;
   final bool active;
   final List<ModifierGroup> modifierGroups;
+  final int modifierGroupsOrderVersion;
   final ProductEditDetails? editDetails;
   Product copyWith({
     String? name,
@@ -80,6 +101,7 @@ class Product {
     String? nameEn,
     String? nameAr,
     List<ModifierGroup>? modifierGroups,
+    int? modifierGroupsOrderVersion,
   }) => Product(
     id: id,
     name: name ?? this.name,
@@ -101,6 +123,8 @@ class Product {
     nameEn: nameEn ?? this.nameEn,
     nameAr: nameAr ?? this.nameAr,
     modifierGroups: modifierGroups ?? this.modifierGroups,
+    modifierGroupsOrderVersion:
+        modifierGroupsOrderVersion ?? this.modifierGroupsOrderVersion,
     editDetails: editDetails,
   );
 
@@ -156,6 +180,9 @@ class ModifierGroup {
     this.isRequired = false,
     this.minSelections = 0,
     this.maxSelections,
+    this.sortOrder = 0,
+    this.orderVersion = 1,
+    this.optionsOrderVersion = 1,
     this.options = const [],
   });
 
@@ -163,7 +190,26 @@ class ModifierGroup {
   final bool isActive, isRequired;
   final int minSelections;
   final int? maxSelections;
+  final int sortOrder, orderVersion, optionsOrderVersion;
   final List<ModifierOption> options;
+
+  ModifierGroup copyWith({
+    int? sortOrder,
+    int? orderVersion,
+    int? optionsOrderVersion,
+    List<ModifierOption>? options,
+  }) => ModifierGroup(
+    id: id,
+    name: name,
+    isActive: isActive,
+    isRequired: isRequired,
+    minSelections: minSelections,
+    maxSelections: maxSelections,
+    sortOrder: sortOrder ?? this.sortOrder,
+    orderVersion: orderVersion ?? this.orderVersion,
+    optionsOrderVersion: optionsOrderVersion ?? this.optionsOrderVersion,
+    options: options ?? this.options,
+  );
 }
 
 class ModifierOption {
@@ -175,11 +221,24 @@ class ModifierOption {
     this.isAvailable = true,
     this.priceAdjustment = 0,
     this.priceIncludesTax = true,
+    this.sortOrder = 0,
   });
 
   final String variationId, name, subSku;
   final bool isActive, isAvailable, priceIncludesTax;
   final int priceAdjustment;
+  final int sortOrder;
+
+  ModifierOption copyWith({int? sortOrder}) => ModifierOption(
+    variationId: variationId,
+    name: name,
+    subSku: subSku,
+    isActive: isActive,
+    isAvailable: isAvailable,
+    priceAdjustment: priceAdjustment,
+    priceIncludesTax: priceIncludesTax,
+    sortOrder: sortOrder ?? this.sortOrder,
+  );
 }
 
 class SelectedModifier {

@@ -416,6 +416,70 @@ void main() {
         },
       ],
     });
+  test('catalog reorder endpoints use versions and complete id lists', () async {
+    final requests = <http.Request>[];
+    final api = Api(
+      client: MockClient((request) async {
+        requests.add(request);
+        return http.Response(
+          '{"success":true,"data":{"version":4,"items":[]}}',
+          200,
+        );
+      }),
+    );
+
+    expect(
+      await api.reorderCategories(
+        accessToken: 'token',
+        parentId: null,
+        orderedIds: const ['10', '8', '21'],
+        expectedVersion: 3,
+      ),
+      4,
+    );
+    expect(
+      await api.reorderProductModifierGroups(
+        accessToken: 'token',
+        productId: '17',
+        orderedGroupIds: const ['78', '92'],
+        expectedVersion: 3,
+      ),
+      4,
+    );
+    expect(
+      await api.reorderModifierOptions(
+        accessToken: 'token',
+        groupId: '78',
+        orderedVariationIds: const ['403', '401'],
+        expectedVersion: 3,
+      ),
+      4,
+    );
+
+    expect(requests[0].url.path, '/connector/api/taxonomy/reorder');
+    expect(jsonDecode(requests[0].body), {
+      'parent_id': 0,
+      'ordered_ids': [10, 8, 21],
+      'expected_version': 3,
+    });
+    expect(
+      requests[1].url.path,
+      '/connector/api/products/17/modifier-groups/reorder',
+    );
+    expect(jsonDecode(requests[1].body), {
+      'ordered_modifier_group_ids': [78, 92],
+      'expected_version': 3,
+    });
+    expect(
+      requests[2].url.path,
+      '/connector/api/modifier-groups/78/options/reorder',
+    );
+    expect(jsonDecode(requests[2].body), {
+      'ordered_variation_ids': [403, 401],
+      'expected_version': 3,
+    });
+  });
+
     expect(result.id, '78');
     expect(result.options.single.variationId, '401');
     expect(result.options.single.priceAdjustment, 500);

@@ -112,6 +112,9 @@ class OfflinePosStorage {
                     'is_required': group.isRequired,
                     'min_selections': group.minSelections,
                     'max_selections': group.maxSelections,
+                    'sort_order': group.sortOrder,
+                    'order_version': group.orderVersion,
+                    'options_order_version': group.optionsOrderVersion,
                     'options': group.options
                         .map(
                           (option) => {
@@ -122,12 +125,14 @@ class OfflinePosStorage {
                             'is_available': option.isAvailable,
                             'price_adjustment': option.priceAdjustment,
                             'price_includes_tax': option.priceIncludesTax,
+                            'sort_order': option.sortOrder,
                           },
                         )
                         .toList(),
                   },
                 )
                 .toList(),
+            'modifier_groups_order_version': product.modifierGroupsOrderVersion,
           },
         )
         .toList(),
@@ -202,6 +207,11 @@ class OfflinePosStorage {
                     minSelections:
                         (group['min_selections'] as num?)?.toInt() ?? 0,
                     maxSelections: (group['max_selections'] as num?)?.toInt(),
+                    sortOrder: (group['sort_order'] as num?)?.toInt() ?? 0,
+                    orderVersion:
+                        (group['order_version'] as num?)?.toInt() ?? 1,
+                    optionsOrderVersion:
+                        (group['options_order_version'] as num?)?.toInt() ?? 1,
                     options: (group['options'] as List? ?? const [])
                         .whereType<Map>()
                         .map((rawOption) {
@@ -217,12 +227,16 @@ class OfflinePosStorage {
                                 0,
                             priceIncludesTax:
                                 option['price_includes_tax'] != false,
+                            sortOrder:
+                                (option['sort_order'] as num?)?.toInt() ?? 0,
                           );
                         })
                         .toList(growable: false),
                   );
                 })
                 .toList(growable: false),
+            modifierGroupsOrderVersion:
+                (item['modifier_groups_order_version'] as num?)?.toInt() ?? 1,
           );
         })
         .toList(growable: false),
@@ -281,6 +295,8 @@ class OfflinePosStorage {
     'name_ar': category.nameAr,
     'icon': category.icon,
     'active': category.active,
+    'sort_order': category.sortOrder,
+    'order_version': category.orderVersion,
     'subcategories': category.subCategories.map(_categoryToJson).toList(),
   };
 
@@ -291,6 +307,8 @@ class OfflinePosStorage {
     nameAr: '${json['name_ar'] ?? ''}',
     icon: '${json['icon'] ?? ''}',
     active: json['active'] != false,
+    sortOrder: (json['sort_order'] as num?)?.toInt() ?? 0,
+    orderVersion: (json['order_version'] as num?)?.toInt() ?? 1,
     subCategories: (json['subcategories'] as List? ?? const [])
         .whereType<Map>()
         .map((item) => _categoryFromJson(Map<String, dynamic>.from(item)))

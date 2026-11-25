@@ -1,4 +1,7 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart' hide Text;
+import 'package:collection/collection.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
@@ -519,6 +522,17 @@ class _RestaurantScreenState extends ConsumerState<RestaurantScreen> {
                     ),
                   ),
                   const SizedBox(width: 8),
+                  OutlinedButton.icon(
+                    onPressed:
+                        products.any(
+                          (product) => product.modifierGroups.length > 1,
+                        )
+                        ? () => _showProductModifierOrder(products)
+                        : null,
+                    icon: const Icon(Icons.swap_vert_rounded),
+                    label: const Text('Product order'),
+                  ),
+                  const SizedBox(width: 8),
                   FilledButton.icon(
                     onPressed: canCreate ? _createGroup : null,
                     icon: const Icon(Icons.add),
@@ -634,6 +648,66 @@ class _RestaurantScreenState extends ConsumerState<RestaurantScreen> {
     }
   }
 
+  Future<void> _showProductModifierOrder(List<Product> products) async {
+    final product = await showDialog<Product>(
+      context: context,
+      builder: (_) => _ProductModifierOrderDialog(
+        products: products
+            .where((item) => item.modifierGroups.length > 1)
+            .toList(growable: false),
+      ),
+    );
+    if (product == null || !mounted) return;
+    final previous = product.modifierGroups;
+    final ordered = await showDialog<List<ModifierGroup>>(
+      context: context,
+      builder: (_) => _ModifierOrderDialog(
+        title: 'Modifier order: ${product.name}',
+        groups: previous,
+      ),
+    );
+    if (ordered == null || !mounted) return;
+    final optimistic = [
+      for (var i = 0; i < ordered.length; i++)
+        ordered[i].copyWith(sortOrder: i),
+    ];
+    ref
+        .read(appStoreProvider.notifier)
+        .upsertProduct(product.copyWith(modifierGroups: optimistic));
+    try {
+      final version = await ref
+          .read(apiProvider)
+          .reorderProductModifierGroups(
+            accessToken: await _token(),
+            productId: product.id,
+            orderedGroupIds: ordered.map((item) => item.id).toList(),
+            expectedVersion: product.modifierGroupsOrderVersion,
+          );
+      ref
+          .read(appStoreProvider.notifier)
+          .upsertProduct(
+            product.copyWith(
+              modifierGroups: optimistic,
+              modifierGroupsOrderVersion: version,
+            ),
+          );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Product modifier order saved.')),
+        );
+      }
+    } catch (error) {
+      ref
+          .read(appStoreProvider.notifier)
+          .upsertProduct(product.copyWith(modifierGroups: previous));
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Could not save modifier order: $error')),
+        );
+      }
+    }
+  }
+
   Future<String> _token() async {
     final token = await ref.read(authControllerProvider.future);
     if (token == null || token.isEmpty || token == 'offline-local-session') {
@@ -652,6 +726,18 @@ class _RestaurantScreenState extends ConsumerState<RestaurantScreen> {
       await ref
           .read(apiProvider)
           .updateModifierGroup(accessToken: await _token(), group: updated);
+      final oldOrder = group.options.map((item) => item.variationId).toList();
+      final newOrder = updated.options.map((item) => item.variationId).toList();
+      if (!const ListEquality<String>().equals(oldOrder, newOrder)) {
+        await ref
+            .read(apiProvider)
+            .reorderModifierOptions(
+              accessToken: await _token(),
+              groupId: group.id,
+              orderedVariationIds: newOrder,
+              expectedVersion: group.optionsOrderVersion,
+            );
+      }
       ref.invalidate(restaurantModifierGroupsProvider);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -708,6 +794,12 @@ class _RestaurantScreenState extends ConsumerState<RestaurantScreen> {
               ),
             );
       }
+      // Assignment changes also advance the backend's per-product ordering
+      // revision. Reload the catalog so a subsequent reorder uses that exact
+      // revision instead of a stale value from before the assignment.
+      ref
+          .read(appStoreProvider.notifier)
+          .replaceProducts(await api.products(token));
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Product assignments updated.')),
@@ -721,6 +813,154 @@ class _RestaurantScreenState extends ConsumerState<RestaurantScreen> {
       }
     }
   }
+}
+
+class _ProductModifierOrderDialog extends StatefulWidget {
+  const _ProductModifierOrderDialog({required this.products});
+
+  final List<Product> products;
+
+  @override
+  State<_ProductModifierOrderDialog> createState() =>
+      _ProductModifierOrderDialogState();
+}
+
+class _ProductModifierOrderDialogState
+    extends State<_ProductModifierOrderDialog> {
+  String _query = '';
+
+  @override
+  Widget build(BuildContext context) {
+    final query = _query.trim().toLowerCase();
+    final products = widget.products
+        .where(
+          (item) =>
+              query.isEmpty ||
+              item.name.toLowerCase().contains(query) ||
+              item.sku.toLowerCase().contains(query),
+        )
+        .toList(growable: false);
+    return AlertDialog(
+      title: const Text('Choose a product'),
+      content: SizedBox(
+        width: 520,
+        height: 500,
+        child: Column(
+          children: [
+            TextField(
+              autofocus: true,
+              decoration: const InputDecoration(
+                prefixIcon: Icon(Icons.search),
+                hintText: 'Search products',
+              ),
+              onChanged: (value) => setState(() => _query = value),
+            ),
+            const SizedBox(height: 10),
+            Expanded(
+              child: ListView.builder(
+                itemCount: products.length,
+                itemBuilder: (_, index) {
+                  final product = products[index];
+                  return ListTile(
+                    title: Text(product.name),
+                    subtitle: Text(
+                      '${product.sku} • ${product.modifierGroups.length} groups',
+                    ),
+                    trailing: const Icon(Icons.chevron_right),
+                    onTap: () => Navigator.pop(context, product),
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Cancel'),
+        ),
+      ],
+    );
+  }
+}
+
+class _ModifierOrderDialog extends StatefulWidget {
+  const _ModifierOrderDialog({required this.title, required this.groups});
+
+  final String title;
+  final List<ModifierGroup> groups;
+
+  @override
+  State<_ModifierOrderDialog> createState() => _ModifierOrderDialogState();
+}
+
+class _ModifierOrderDialogState extends State<_ModifierOrderDialog> {
+  late final List<ModifierGroup> _items = [...widget.groups];
+
+  void _move(int oldIndex, int newIndex) {
+    setState(() {
+      if (newIndex > oldIndex) newIndex--;
+      final item = _items.removeAt(oldIndex);
+      _items.insert(newIndex.clamp(0, _items.length), item);
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) => AlertDialog(
+    title: Text(widget.title),
+    content: SizedBox(
+      width: 520,
+      height: math.min(500, 72.0 * _items.length),
+      child: ReorderableListView.builder(
+        buildDefaultDragHandles: false,
+        itemCount: _items.length,
+        onReorder: _move,
+        itemBuilder: (_, index) {
+          final group = _items[index];
+          return ListTile(
+            key: ValueKey(group.id),
+            leading: ReorderableDragStartListener(
+              index: index,
+              child: const Padding(
+                padding: EdgeInsets.all(8),
+                child: Icon(Icons.drag_indicator_rounded),
+              ),
+            ),
+            title: Text(group.name),
+            subtitle: Text('${group.options.length} options'),
+            trailing: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                IconButton(
+                  tooltip: 'Move up',
+                  onPressed: index == 0 ? null : () => _move(index, index - 1),
+                  icon: const Icon(Icons.keyboard_arrow_up),
+                ),
+                IconButton(
+                  tooltip: 'Move down',
+                  onPressed: index == _items.length - 1
+                      ? null
+                      : () => _move(index, index + 2),
+                  icon: const Icon(Icons.keyboard_arrow_down),
+                ),
+              ],
+            ),
+          );
+        },
+      ),
+    ),
+    actions: [
+      TextButton(
+        onPressed: () => Navigator.pop(context),
+        child: const Text('Cancel'),
+      ),
+      FilledButton(
+        onPressed: () => Navigator.pop(context, _items),
+        child: const Text('Save order'),
+      ),
+    ],
+  );
 }
 
 class _ModifierGroupDraft {
@@ -1077,6 +1317,15 @@ class _ModifierGroupDialogState extends State<_ModifierGroupDialog> {
       .where((option) => option.isActive)
       .map((option) => option.variationId)
       .toSet();
+  late final List<ModifierOption> _options = [...widget.group.options];
+
+  void _moveOption(int oldIndex, int newIndex) {
+    setState(() {
+      if (newIndex > oldIndex) newIndex--;
+      final item = _options.removeAt(oldIndex);
+      _options.insert(newIndex.clamp(0, _options.length), item);
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -1160,20 +1409,40 @@ class _ModifierGroupDialogState extends State<_ModifierGroupDialog> {
                   style: TextStyle(fontWeight: FontWeight.w800),
                 ),
               ),
-              for (final option in widget.group.options)
-                CheckboxListTile(
-                  contentPadding: EdgeInsets.zero,
-                  value: _activeOptions.contains(option.variationId),
-                  title: Text(option.name),
-                  subtitle: option.subSku.isEmpty ? null : Text(option.subSku),
-                  onChanged: (value) => setState(() {
-                    if (value == true) {
-                      _activeOptions.add(option.variationId);
-                    } else {
-                      _activeOptions.remove(option.variationId);
-                    }
-                  }),
+              SizedBox(
+                height: math.min(360, 70.0 * _options.length),
+                child: ReorderableListView.builder(
+                  buildDefaultDragHandles: false,
+                  itemCount: _options.length,
+                  onReorder: _moveOption,
+                  itemBuilder: (_, index) {
+                    final option = _options[index];
+                    return CheckboxListTile(
+                      key: ValueKey(option.variationId),
+                      contentPadding: EdgeInsets.zero,
+                      secondary: ReorderableDragStartListener(
+                        index: index,
+                        child: const Padding(
+                          padding: EdgeInsets.all(8),
+                          child: Icon(Icons.drag_indicator_rounded),
+                        ),
+                      ),
+                      value: _activeOptions.contains(option.variationId),
+                      title: Text(option.name),
+                      subtitle: option.subSku.isEmpty
+                          ? null
+                          : Text(option.subSku),
+                      onChanged: (value) => setState(() {
+                        if (value == true) {
+                          _activeOptions.add(option.variationId);
+                        } else {
+                          _activeOptions.remove(option.variationId);
+                        }
+                      }),
+                    );
+                  },
                 ),
+              ),
               if (invalid)
                 const Align(
                   alignment: AlignmentDirectional.centerStart,
@@ -1203,15 +1472,18 @@ class _ModifierGroupDialogState extends State<_ModifierGroupDialog> {
                     minSelections: _minimum,
                     maxSelections: _maximum,
                     options: [
-                      for (final option in widget.group.options)
+                      for (var index = 0; index < _options.length; index++)
                         ModifierOption(
-                          variationId: option.variationId,
-                          name: option.name,
-                          subSku: option.subSku,
-                          isActive: _activeOptions.contains(option.variationId),
-                          isAvailable: option.isAvailable,
-                          priceAdjustment: option.priceAdjustment,
-                          priceIncludesTax: option.priceIncludesTax,
+                          variationId: _options[index].variationId,
+                          name: _options[index].name,
+                          subSku: _options[index].subSku,
+                          isActive: _activeOptions.contains(
+                            _options[index].variationId,
+                          ),
+                          isAvailable: _options[index].isAvailable,
+                          priceAdjustment: _options[index].priceAdjustment,
+                          priceIncludesTax: _options[index].priceIncludesTax,
+                          sortOrder: index,
                         ),
                     ],
                   ),

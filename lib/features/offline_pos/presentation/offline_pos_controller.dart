@@ -689,6 +689,9 @@ class OfflinePosController extends AsyncNotifier<OfflinePosState> {
       imageUrl: existing?.imageUrl ?? '',
       nameEn: existing?.nameEn ?? '',
       nameAr: existing?.nameAr ?? '',
+      modifierGroupsOrderVersion: _number(
+        item['modifier_groups_order_version'],
+      ).round().clamp(1, 1 << 31),
       modifierGroups: _modifierGroups(item['modifier_groups']),
     );
   }
@@ -704,6 +707,13 @@ class OfflinePosController extends AsyncNotifier<OfflinePosState> {
           maxSelections: group['max_selections'] == null
               ? null
               : _number(group['max_selections']).round(),
+          sortOrder: _number(group['sort_order']).round(),
+          orderVersion: _number(
+            group['order_version'],
+          ).round().clamp(1, 1 << 31),
+          optionsOrderVersion: _number(
+            group['options_order_version'],
+          ).round().clamp(1, 1 << 31),
           options: _items(group['options'])
               .map(
                 (option) => ModifierOption(
@@ -718,6 +728,7 @@ class OfflinePosController extends AsyncNotifier<OfflinePosState> {
                     option['price_includes_tax'],
                     fallback: true,
                   ),
+                  sortOrder: _number(option['sort_order']).round(),
                 ),
               )
               .toList(growable: false),

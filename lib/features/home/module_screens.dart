@@ -2258,6 +2258,13 @@ class _CategoriesScreenState extends ConsumerState<CategoriesScreen> {
                 'Categories',
                 subtitle: 'Organize products for faster checkout.',
               ),
+              OutlinedButton.icon(
+                onPressed: _busy || s.categories.length < 2
+                    ? null
+                    : () => _showCategoryOrder(),
+                icon: const Icon(Icons.swap_vert_rounded),
+                label: const Text('Reorder'),
+              ),
               FilledButton.icon(
                 onPressed: _busy ? null : () => _showEditor(),
                 icon: const Icon(Icons.add_rounded),
@@ -2346,6 +2353,104 @@ class _CategoriesScreenState extends ConsumerState<CategoriesScreen> {
         ],
       ),
     );
+  }
+
+  Future<void> _showCategoryOrder({Category? parent}) async {
+    final current = ref.read(appStoreProvider).categories;
+    final items = parent == null
+        ? current
+        : current.firstWhere((item) => item.id == parent.id).subCategories;
+    final ordered = await showDialog<List<Category>>(
+      context: context,
+      builder: (_) => _CategoryOrderDialog(
+        title: parent == null
+            ? 'Reorder categories'
+            : 'Reorder ${_categoryLabel(parent)} subcategories',
+        categories: items,
+      ),
+    );
+    if (ordered == null || !mounted) return;
+    final previous = ref.read(appStoreProvider).categories;
+    final optimistic = parent == null
+        ? [
+            for (var i = 0; i < ordered.length; i++)
+              ordered[i].copyWith(sortOrder: i),
+          ]
+        : [
+            for (final category in previous)
+              category.id == parent.id
+                  ? category.copyWith(
+                      subCategories: [
+                        for (var i = 0; i < ordered.length; i++)
+                          ordered[i].copyWith(sortOrder: i),
+                      ],
+                    )
+                  : category,
+          ];
+    ref.read(appStoreProvider.notifier).replaceCategories(optimistic);
+    setState(() => _busy = true);
+    try {
+      final version = items.isEmpty ? 1 : items.first.orderVersion;
+      final nextVersion = await _withToken(
+        (token) => ref
+            .read(apiProvider)
+            .reorderCategories(
+              accessToken: token,
+              parentId: parent?.id,
+              orderedIds: ordered.map((item) => item.id).toList(),
+              expectedVersion: version,
+            ),
+      );
+      final saved = parent == null
+          ? [
+              for (var i = 0; i < ordered.length; i++)
+                ordered[i].copyWith(sortOrder: i, orderVersion: nextVersion),
+            ]
+          : [
+              for (final category in optimistic)
+                category.id == parent.id
+                    ? category.copyWith(
+                        subCategories: [
+                          for (var i = 0; i < ordered.length; i++)
+                            ordered[i].copyWith(
+                              sortOrder: i,
+                              orderVersion: nextVersion,
+                            ),
+                        ],
+                      )
+                    : category,
+            ];
+      ref.read(appStoreProvider.notifier).replaceCategories(saved);
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('Category order saved.')));
+      }
+    } catch (error) {
+      ref.read(appStoreProvider.notifier).replaceCategories(previous);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Could not save category order: $error')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<T> _withToken<T>(Future<T> Function(String token) action) async {
+    final token = await ref.read(authControllerProvider.future);
+    if (token == null || token.isEmpty || token == 'offline-local-session') {
+      throw const ApiException('Category ordering requires an online session.');
+    }
+    try {
+      return await action(token);
+    } on ApiException catch (error) {
+      if (error.statusCode != 401) rethrow;
+      return action(
+        await ref.read(authControllerProvider.notifier).refreshAccessToken(),
+      );
+    }
   }
 
   Future<void> _showEditor({Category? category, Category? parent}) async {
@@ -2554,6 +2659,15 @@ class _CategoriesScreenState extends ConsumerState<CategoriesScreen> {
           ),
         ),
         actions: [
+          if (parent.subCategories.length > 1)
+            TextButton.icon(
+              onPressed: () {
+                Navigator.pop(dialogContext);
+                _showCategoryOrder(parent: parent);
+              },
+              icon: const Icon(Icons.swap_vert_rounded),
+              label: const Text('Reorder'),
+            ),
           TextButton.icon(
             onPressed: () {
               Navigator.pop(dialogContext);
@@ -2577,6 +2691,84 @@ class _CategoriesScreenState extends ConsumerState<CategoriesScreen> {
     if (category.nameEn.trim().isNotEmpty) return category.nameEn;
     return context.tr(category.name);
   }
+}
+
+class _CategoryOrderDialog extends StatefulWidget {
+  const _CategoryOrderDialog({required this.title, required this.categories});
+
+  final String title;
+  final List<Category> categories;
+
+  @override
+  State<_CategoryOrderDialog> createState() => _CategoryOrderDialogState();
+}
+
+class _CategoryOrderDialogState extends State<_CategoryOrderDialog> {
+  late final List<Category> _items = [...widget.categories];
+
+  void _move(int oldIndex, int newIndex) {
+    setState(() {
+      if (newIndex > oldIndex) newIndex--;
+      final item = _items.removeAt(oldIndex);
+      _items.insert(newIndex.clamp(0, _items.length), item);
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) => AlertDialog(
+    title: Text(widget.title),
+    content: SizedBox(
+      width: 520,
+      height: math.min(520, 76.0 * _items.length),
+      child: ReorderableListView.builder(
+        buildDefaultDragHandles: false,
+        itemCount: _items.length,
+        onReorder: _move,
+        itemBuilder: (_, index) {
+          final item = _items[index];
+          return ListTile(
+            key: ValueKey(item.id),
+            contentPadding: EdgeInsets.zero,
+            leading: ReorderableDragStartListener(
+              index: index,
+              child: const Padding(
+                padding: EdgeInsets.all(10),
+                child: Icon(Icons.drag_indicator_rounded),
+              ),
+            ),
+            title: Text(item.name),
+            trailing: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                IconButton(
+                  tooltip: 'Move up',
+                  onPressed: index == 0 ? null : () => _move(index, index - 1),
+                  icon: const Icon(Icons.keyboard_arrow_up),
+                ),
+                IconButton(
+                  tooltip: 'Move down',
+                  onPressed: index == _items.length - 1
+                      ? null
+                      : () => _move(index, index + 2),
+                  icon: const Icon(Icons.keyboard_arrow_down),
+                ),
+              ],
+            ),
+          );
+        },
+      ),
+    ),
+    actions: [
+      TextButton(
+        onPressed: () => Navigator.pop(context),
+        child: const Text('Cancel'),
+      ),
+      FilledButton(
+        onPressed: () => Navigator.pop(context, _items),
+        child: const Text('Save order'),
+      ),
+    ],
+  );
 }
 
 class LegacyPurchasesScreen extends ConsumerWidget {
