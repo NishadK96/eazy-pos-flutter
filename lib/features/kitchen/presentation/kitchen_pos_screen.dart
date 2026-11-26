@@ -29,6 +29,8 @@ import '../../settings/application/order_type_settings_controller.dart';
 import '../../settings/application/payment_method_settings_controller.dart';
 import '../../settings/application/pos_operating_mode_controller.dart';
 import 'kitchen_printing_controller.dart';
+import '../application/checkout_timing_stub.dart'
+    if (dart.library.io) '../application/checkout_timing_io.dart';
 
 typedef _RestaurantContext = ({
   List<RestaurantTable> tables,
@@ -885,7 +887,10 @@ class _KitchenPosScreenState extends ConsumerState<KitchenPosScreen> {
     );
   }
 
-  Future<void> _printBill({String? paymentMethod}) async {
+  Future<void> _printBill({
+    String? paymentMethod,
+    void Function(String)? recordTiming,
+  }) async {
     final transactionId = _savedTransactionId;
     if (transactionId == null || transactionId.isEmpty) {
       _show('Save or send the order before printing its bill.');
@@ -900,10 +905,13 @@ class _KitchenPosScreenState extends ConsumerState<KitchenPosScreen> {
     try {
       final store = ref.read(appStoreProvider);
       final printers = ref.read(printerControllerProvider);
-      await ref
+      final printed = await ref
           .read(invoiceLayoutControllerProvider.notifier)
           .printSale(
             sale: sale,
+            onPdfReady: recordTiming == null
+                ? null
+                : () => recordTiming('invoice PDF ready'),
             businessName: store.business?.name ?? 'Eazy POS',
             settings: printers.settings,
             printers: printers.selectedPrinters,
@@ -911,8 +919,12 @@ class _KitchenPosScreenState extends ConsumerState<KitchenPosScreen> {
                 Localizations.localeOf(context).languageCode.toLowerCase() ==
                 'ar',
           );
+      recordTiming?.call(
+        printed ? 'print submission returned success' : 'print submission returned false',
+      );
       if (mounted) _show('Bill sent to the selected billing printer.');
     } catch (error) {
+      recordTiming?.call('billing print failed');
       if (mounted) _show('Unable to print this bill: $error');
     } finally {
       if (mounted) setState(() => _sending = false);
@@ -1049,6 +1061,14 @@ class _KitchenPosScreenState extends ConsumerState<KitchenPosScreen> {
       ),
     );
     if (method == null || !mounted) return;
+    final stopwatch = checkoutTimingEnabled ? (Stopwatch()..start()) : null;
+    final timing = <String>[];
+    void recordTiming(String stage) {
+      if (stopwatch != null) {
+        timing.add('${stopwatch.elapsedMilliseconds}ms $stage');
+      }
+    }
+    recordTiming('payment selected');
     setState(() => _sending = true);
     try {
       if (_offlineSession && _savedTransactionId == null) {
@@ -1105,6 +1125,7 @@ class _KitchenPosScreenState extends ConsumerState<KitchenPosScreen> {
       }
       // Kitchen job generation can involve several backend requests and must
       // not hold up the customer receipt after payment has succeeded.
+      recordTiming('sale confirmed');
       if (sendToKitchen) {
         unawaited(
           _processKitchenPrintingInBackground(transactionId, locationId),
@@ -1112,7 +1133,10 @@ class _KitchenPosScreenState extends ConsumerState<KitchenPosScreen> {
       }
       if (!mounted) return;
       if (printCustomerBill) {
-        await _printBill(paymentMethod: method.code);
+        await _printBill(
+          paymentMethod: method.code,
+          recordTiming: stopwatch == null ? null : recordTiming,
+        );
       }
       if (!mounted) return;
       ref.invalidate(kitchenOrdersProvider(locationId));
@@ -1157,6 +1181,11 @@ class _KitchenPosScreenState extends ConsumerState<KitchenPosScreen> {
     } catch (error) {
       if (mounted) _show('Billing needs attention: $error');
     } finally {
+      if (timing.length > 1) {
+        writeCheckoutTiming(
+          '${DateTime.now().toUtc().toIso8601String()} | ${timing.join(' | ')}',
+        );
+      }
       if (mounted) setState(() => _sending = false);
     }
   }

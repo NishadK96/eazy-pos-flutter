@@ -241,6 +241,7 @@ class InvoiceLayoutController extends AsyncNotifier<ErpInvoiceLayoutCatalog?> {
 
   Future<bool> printSale({
     required Sale sale,
+    VoidCallback? onPdfReady,
     required String businessName,
     required PrinterSettings settings,
     Printer? printer,
@@ -272,6 +273,7 @@ class InvoiceLayoutController extends AsyncNotifier<ErpInvoiceLayoutCatalog?> {
               invoiceLayoutId: route.layoutId,
               retryWhenFinalizing: true,
             );
+            onPdfReady?.call();
             final destination = Printer(
               url: route.printerUrl,
               name: route.printerName.isEmpty
@@ -318,6 +320,7 @@ class InvoiceLayoutController extends AsyncNotifier<ErpInvoiceLayoutCatalog?> {
     final profile = sale.customer.isBusiness
         ? 'billing-business'
         : 'billing-retail';
+    onPdfReady?.call();
     final format = sale.serverId == null
         ? OfflineArabicReceipt.pageFormat
         : PrinterDocumentService.formatFor(
