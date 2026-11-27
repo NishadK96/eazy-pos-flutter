@@ -23,6 +23,7 @@ import '../../cash_register/domain/cash_register_entities.dart';
 import '../../cash_register/presentation/cash_register_controller.dart';
 import '../../cash_register/presentation/cash_register_dialog.dart';
 import '../../invoice_layouts/presentation/invoice_layout_controller.dart';
+import '../domain/kitchen_entities.dart';
 import '../../offline_pos/presentation/offline_pos_controller.dart';
 import '../../printers/application/printer_controller.dart';
 import '../../settings/application/order_type_settings_controller.dart';
@@ -920,7 +921,9 @@ class _KitchenPosScreenState extends ConsumerState<KitchenPosScreen> {
                 'ar',
           );
       recordTiming?.call(
-        printed ? 'print submission returned success' : 'print submission returned false',
+        printed
+            ? 'print submission returned success'
+            : 'print submission returned false',
       );
       if (mounted) _show('Bill sent to the selected billing printer.');
     } catch (error) {
@@ -995,11 +998,16 @@ class _KitchenPosScreenState extends ConsumerState<KitchenPosScreen> {
   Future<void> _processKitchenPrintingInBackground(
     String transactionId,
     String locationId,
+    KitchenJobsResult? saleJobs,
   ) async {
     try {
       final summary = await ref
           .read(kitchenPrintingControllerProvider.notifier)
-          .processTransaction(transactionId, locationId: locationId);
+          .processTransaction(
+            transactionId,
+            locationId: locationId,
+            saleJobs: saleJobs,
+          );
       if (mounted) {
         _show('${summary.printedCount} kitchen ticket(s) printed.');
       }
@@ -1068,6 +1076,7 @@ class _KitchenPosScreenState extends ConsumerState<KitchenPosScreen> {
         timing.add('${stopwatch.elapsedMilliseconds}ms $stage');
       }
     }
+
     recordTiming('payment selected');
     setState(() => _sending = true);
     try {
@@ -1086,6 +1095,7 @@ class _KitchenPosScreenState extends ConsumerState<KitchenPosScreen> {
       }
       var transactionId = _savedTransactionId;
       final creatingSale = transactionId == null;
+      KitchenJobsResult? saleJobs;
       if (transactionId == null) {
         _pendingClientTransactionId ??= _newClientTransactionId();
         transactionId = await ref
@@ -1093,6 +1103,7 @@ class _KitchenPosScreenState extends ConsumerState<KitchenPosScreen> {
             .createKitchenOrder(
               locationId: locationId,
               cashRegisterId: register.id,
+              onPrintJobs: (jobs) => saleJobs = jobs,
               customer: customer,
               lines: _lines.values.toList(growable: false),
               clientTransactionId: _pendingClientTransactionId!,
@@ -1107,7 +1118,7 @@ class _KitchenPosScreenState extends ConsumerState<KitchenPosScreen> {
         setState(() => _savedTransactionId = transactionId);
       }
       if (!creatingSale) {
-        await ref
+        saleJobs = await ref
             .read(kitchenPrintingControllerProvider.notifier)
             .updateKitchenOrder(
               transactionId: transactionId,
@@ -1128,7 +1139,11 @@ class _KitchenPosScreenState extends ConsumerState<KitchenPosScreen> {
       recordTiming('sale confirmed');
       if (sendToKitchen) {
         unawaited(
-          _processKitchenPrintingInBackground(transactionId, locationId),
+          _processKitchenPrintingInBackground(
+            transactionId,
+            locationId,
+            saleJobs,
+          ),
         );
       }
       if (!mounted) return;
@@ -2124,6 +2139,7 @@ class _KitchenPosScreenState extends ConsumerState<KitchenPosScreen> {
     setState(() => _sending = true);
     try {
       var transactionId = _savedTransactionId;
+      KitchenJobsResult? saleJobs;
       if (transactionId == null) {
         _pendingClientTransactionId ??= _newClientTransactionId();
         final note = _composedSaleNote();
@@ -2135,6 +2151,7 @@ class _KitchenPosScreenState extends ConsumerState<KitchenPosScreen> {
               lines: _lines.values.toList(growable: false),
               clientTransactionId: _pendingClientTransactionId!,
               saleNote: note,
+              onPrintJobs: (jobs) => saleJobs = jobs,
               tableId: _service == 'Dine in' ? _tableId : null,
               serviceStaffId: _waiterId,
               serviceTypeId: _serviceTypeId,
@@ -2143,7 +2160,7 @@ class _KitchenPosScreenState extends ConsumerState<KitchenPosScreen> {
         if (!mounted) return;
         setState(() => _savedTransactionId = transactionId);
       } else if (_activeOrder != null) {
-        await ref
+        saleJobs = await ref
             .read(kitchenPrintingControllerProvider.notifier)
             .updateKitchenOrder(
               transactionId: transactionId,
@@ -2160,7 +2177,11 @@ class _KitchenPosScreenState extends ConsumerState<KitchenPosScreen> {
       }
       final summary = await ref
           .read(kitchenPrintingControllerProvider.notifier)
-          .processTransaction(transactionId, locationId: locationId);
+          .processTransaction(
+            transactionId,
+            locationId: locationId,
+            saleJobs: saleJobs,
+          );
       if (!mounted) return;
       ref.invalidate(kitchenOrdersProvider(locationId!));
       _show(

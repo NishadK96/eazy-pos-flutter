@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../apis/api.dart';
@@ -263,6 +264,7 @@ class KitchenPrintingController extends AsyncNotifier<KitchenPrintingState> {
 
   Future<String> createKitchenOrder({
     required String locationId,
+    void Function(KitchenJobsResult?)? onPrintJobs,
     String? cashRegisterId,
     required Customer customer,
     required List<CartLine> lines,
@@ -309,6 +311,7 @@ class KitchenPrintingController extends AsyncNotifier<KitchenPrintingState> {
         'The kitchen sale response did not include a transaction ID. Retry with the same order.',
       );
     }
+    onPrintJobs?.call(KitchenJobsResult.fromSaleResponse(response));
     return transactionId;
   }
 
@@ -318,7 +321,7 @@ class KitchenPrintingController extends AsyncNotifier<KitchenPrintingState> {
         .deleteSale(accessToken: token, transactionId: transactionId),
   );
 
-  Future<void> updateKitchenOrder({
+  Future<KitchenJobsResult?> updateKitchenOrder({
     required String transactionId,
     required String locationId,
     required Customer customer,
@@ -349,12 +352,13 @@ class KitchenPrintingController extends AsyncNotifier<KitchenPrintingState> {
           paymentMethod: paymentMethod,
           suspended: suspended,
         )
-        .then((_) {}),
+        .then(KitchenJobsResult.fromSaleResponse),
   );
 
   Future<KitchenPrintSummary> processTransaction(
     String transactionId, {
     String? locationId,
+    KitchenJobsResult? saleJobs,
   }) async {
     if (transactionId.isEmpty) {
       throw const ApiException('Kitchen transaction ID is missing.');
@@ -362,15 +366,17 @@ class KitchenPrintingController extends AsyncNotifier<KitchenPrintingState> {
     final current = _current;
     late final KitchenJobsResult result;
     try {
-      result = await _authorized(
-        (token) => ref
-            .read(apiProvider)
-            .generateKitchenPrintJobs(
-              accessToken: token,
-              transactionId: transactionId,
-              locationId: locationId ?? current.locationId,
-            ),
-      );
+      result =
+          saleJobs ??
+          await _authorized(
+            (token) => ref
+                .read(apiProvider)
+                .generateKitchenPrintJobs(
+                  accessToken: token,
+                  transactionId: transactionId,
+                  locationId: locationId ?? current.locationId,
+                ),
+          );
     } catch (error) {
       _set(
         current.copyWith(
@@ -394,14 +400,22 @@ class KitchenPrintingController extends AsyncNotifier<KitchenPrintingState> {
     var printedCount = result.jobs
         .where((job) => job.status == 'printed')
         .length;
-    for (final job in result.jobs.where(
+    final pendingJobs = result.jobs.where(
       (job) => job.status == 'pending' || job.status == 'failed',
-    )) {
+    );
+    for (final job in pendingJobs) {
       try {
-        await printJob(job);
+        await printJob(job, refreshAfterPrint: false);
         printedCount++;
       } catch (error) {
         failures.add('${job.printer.name}: $error');
+      }
+    }
+    if (pendingJobs.isNotEmpty) {
+      try {
+        await refreshJobs();
+      } catch (error) {
+        debugPrint('Unable to refresh kitchen print jobs: $error');
       }
     }
     if (failures.isNotEmpty) {
@@ -492,7 +506,11 @@ class KitchenPrintingController extends AsyncNotifier<KitchenPrintingState> {
     );
   }
 
-  Future<void> printJob(KitchenPrintJob job, {bool acknowledge = true}) async {
+  Future<void> printJob(
+    KitchenPrintJob job, {
+    bool acknowledge = true,
+    bool refreshAfterPrint = true,
+  }) async {
     final localPrinter = ref
         .read(printerControllerProvider)
         .kitchenPrinter(job.printer.id);
@@ -506,17 +524,22 @@ class KitchenPrintingController extends AsyncNotifier<KitchenPrintingState> {
     }
     final attemptId = _attemptId(job);
     try {
-      if (acknowledge) await _status(job.id, 'printing', attemptId);
-      final bytes = await _printDocument(job);
-      await PrinterDocumentService.printPdfBytes(
+      late Uint8List bytes;
+      await Future.wait<void>([
+        if (acknowledge) _status(job.id, 'printing', attemptId),
+        _printDocument(job).then<void>((document) => bytes = document),
+      ]);
+      final printed = await PrinterDocumentService.printPdfBytes(
         bytes,
         name: 'Kitchen order ${job.transactionId} - ${job.printer.name}',
         printer: localPrinter,
         format: PrinterDocumentService.kitchenFormat(job.template),
       );
+      if (!printed)
+        throw StateError('The printer rejected the kitchen ticket.');
       if (acknowledge) {
         await _status(job.id, 'printed', attemptId);
-        await refreshJobs();
+        if (refreshAfterPrint) await refreshJobs();
       }
     } catch (error) {
       if (acknowledge) {

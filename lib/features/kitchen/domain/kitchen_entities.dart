@@ -300,6 +300,20 @@ class KitchenJobsResult {
   final List<KitchenPrintJob> jobs;
   final List<KitchenJobItem> unassignedItems;
 
+  static KitchenJobsResult? fromSaleResponse(Map<String, dynamic> response) {
+    final payload = response['kitchen_print_jobs'];
+    if (payload is List) {
+      return KitchenJobsResult.fromJson({
+        'jobs': payload,
+        'unassigned_items': response['unassigned_items'],
+      });
+    }
+    if (payload is Map && payload['jobs'] is List) {
+      return KitchenJobsResult.fromJson(_object(payload));
+    }
+    return null;
+  }
+
   factory KitchenJobsResult.fromJson(Map<String, dynamic> json) =>
       KitchenJobsResult(
         jobs: _objectList(

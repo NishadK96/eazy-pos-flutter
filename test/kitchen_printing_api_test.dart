@@ -8,6 +8,26 @@ import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 
 void main() {
+  test('sale jobs distinguish an empty list from a legacy response', () {
+    expect(KitchenJobsResult.fromSaleResponse({'id': 42}), isNull);
+    expect(
+      KitchenJobsResult.fromSaleResponse({'kitchen_print_jobs': []})!.jobs,
+      isEmpty,
+    );
+    final result = KitchenJobsResult.fromSaleResponse({
+      'kitchen_print_jobs': {
+        'jobs': [
+          {'id': 12, 'transaction_id': 42, 'status': 'pending'},
+        ],
+        'unassigned_items': [
+          {'product_name': 'Coffee'},
+        ],
+      },
+    })!;
+    expect(result.jobs.single.id, '12');
+    expect(result.unassignedItems.single.productName, 'Coffee');
+  });
+
   test('restaurant tables are filtered by location and mapped', () async {
     final api = Api(
       client: MockClient((request) async {
