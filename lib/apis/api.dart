@@ -2909,11 +2909,13 @@ class Api {
     List<Product> products,
     List<Customer> customers, {
     String? status,
+    String? subStatus,
   }) async {
     final uri = Uri.parse(ApiEndPoints.salesUrl).replace(
       queryParameters: {
         'per_page': '-1',
         if (status != null && status.isNotEmpty) 'status': status,
+        if (subStatus != null && subStatus.isNotEmpty) 'sub_status': subStatus,
       },
     );
     final data = await _getDataList(uri, accessToken, 'sales');
@@ -4456,6 +4458,19 @@ class Api {
           json['customer_advance'] != null ||
           json['customer_advance_id'] != null ||
           _bool(json['has_customer_advance']),
+      subStatus: json['sub_status']?.toString() ?? '',
+      isQuotation:
+          _bool(json['is_quotation']) ||
+          json['sub_status']?.toString().toLowerCase() == 'quotation',
+      quotationValidityDate: json['quotation_validity_date']?.toString() ?? '',
+      quotationDeliveryDate: json['quotation_delivery_date']?.toString() ?? '',
+      quotationInvoiceDate: json['quotation_invoice_date']?.toString() ?? '',
+      quotationAttention: json['quotation_attention']?.toString() ?? '',
+      quotationTerms: json['quotation_terms']?.toString() ?? '',
+      vehicleNumber:
+          json['vehicle_number']?.toString() ??
+          json['quotation_vehicle_number']?.toString() ??
+          '',
     );
   }
 

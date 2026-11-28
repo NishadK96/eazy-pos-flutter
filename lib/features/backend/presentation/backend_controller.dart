@@ -152,6 +152,43 @@ class BackendController extends AsyncNotifier<void> {
     }
   }
 
+  Future<List<Sale>> loadQuotations() async {
+    final current = ref.read(appStoreProvider);
+
+    Future<List<Sale>> load(String token) => ref
+        .read(apiProvider)
+        .sales(
+          token,
+          current.products,
+          current.customers,
+          status: 'draft',
+          subStatus: 'quotation',
+        );
+
+    var token = await _token();
+    try {
+      final results = await load(token);
+      return results
+          .where(
+            (sale) =>
+                sale.isQuotation || sale.subStatus.toLowerCase() == 'quotation',
+          )
+          .toList(growable: false);
+    } on ApiException catch (error) {
+      if (error.statusCode != 401) rethrow;
+      token = await ref
+          .read(authControllerProvider.notifier)
+          .refreshAccessToken();
+      final results = await load(token);
+      return results
+          .where(
+            (sale) =>
+                sale.isQuotation || sale.subStatus.toLowerCase() == 'quotation',
+          )
+          .toList(growable: false);
+    }
+  }
+
   void _mergeSalesHistory(List<Sale> remoteSales) {
     final localSales = ref.read(appStoreProvider).sales;
     final merged = <Sale>[];

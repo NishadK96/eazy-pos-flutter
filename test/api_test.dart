@@ -12,6 +12,57 @@ import 'package:eazy_pos/features/vouchers/domain/voucher_entities.dart';
 import 'package:eazy_pos/features/backend/domain/backend_repository.dart';
 
 void main() {
+  test(
+    'quotation history sends filters and parses quotation metadata',
+    () async {
+      late Uri requestedUri;
+      final api = Api(
+        client: MockClient((request) async {
+          requestedUri = request.url;
+          return http.Response(
+            jsonEncode({
+              'data': [
+                {
+                  'id': 91,
+                  'invoice_no': 'Q-0091',
+                  'status': 'draft',
+                  'sub_status': 'quotation',
+                  'is_quotation': 1,
+                  'contact_id': 7,
+                  'final_total': 125.50,
+                  'quotation_validity_date': '2026-12-15',
+                  'quotation_attention': 'Rummana',
+                  'vehicle_number': 'ABC-123',
+                  'sell_lines': <Object>[],
+                  'payment_lines': <Object>[],
+                },
+              ],
+            }),
+            200,
+            headers: const {'content-type': 'application/json'},
+          );
+        }),
+      );
+
+      final quotations = await api.sales(
+        'token',
+        const [],
+        const [Customer(id: '7', name: 'Rummana Trading')],
+        status: 'draft',
+        subStatus: 'quotation',
+      );
+
+      expect(requestedUri.queryParameters['status'], 'draft');
+      expect(requestedUri.queryParameters['sub_status'], 'quotation');
+      expect(quotations.single.isQuotation, isTrue);
+      expect(quotations.single.subStatus, 'quotation');
+      expect(quotations.single.quotationValidityDate, '2026-12-15');
+      expect(quotations.single.quotationAttention, 'Rummana');
+      expect(quotations.single.vehicleNumber, 'ABC-123');
+      expect(quotations.single.total, 12550);
+    },
+  );
+
   test('customer list keeps Arabic names when name is empty', () async {
     final api = Api(
       client: MockClient(

@@ -869,6 +869,14 @@ class Sale {
     this.isKitchenOrder = false,
     this.payments = const [],
     this.hasCustomerAdvance = false,
+    this.subStatus = '',
+    this.isQuotation = false,
+    this.quotationValidityDate = '',
+    this.quotationDeliveryDate = '',
+    this.quotationInvoiceDate = '',
+    this.quotationAttention = '',
+    this.quotationTerms = '',
+    this.vehicleNumber = '',
   });
   final String localId, invoiceNo;
   final String? serverId;
@@ -886,6 +894,14 @@ class Sale {
   final bool isKitchenOrder;
   final List<PaymentAllocation> payments;
   final bool hasCustomerAdvance;
+  final String subStatus;
+  final bool isQuotation;
+  final String quotationValidityDate;
+  final String quotationDeliveryDate;
+  final String quotationInvoiceDate;
+  final String quotationAttention;
+  final String quotationTerms;
+  final String vehicleNumber;
 
   Sale copyWith({
     String? serverId,
@@ -903,6 +919,14 @@ class Sale {
     bool? isKitchenOrder,
     List<PaymentAllocation>? payments,
     bool? hasCustomerAdvance,
+    String? subStatus,
+    bool? isQuotation,
+    String? quotationValidityDate,
+    String? quotationDeliveryDate,
+    String? quotationInvoiceDate,
+    String? quotationAttention,
+    String? quotationTerms,
+    String? vehicleNumber,
   }) => Sale(
     localId: localId,
     serverId: serverId ?? this.serverId,
@@ -929,6 +953,14 @@ class Sale {
     isKitchenOrder: isKitchenOrder ?? this.isKitchenOrder,
     payments: payments ?? this.payments,
     hasCustomerAdvance: hasCustomerAdvance ?? this.hasCustomerAdvance,
+    subStatus: subStatus ?? this.subStatus,
+    isQuotation: isQuotation ?? this.isQuotation,
+    quotationValidityDate: quotationValidityDate ?? this.quotationValidityDate,
+    quotationDeliveryDate: quotationDeliveryDate ?? this.quotationDeliveryDate,
+    quotationInvoiceDate: quotationInvoiceDate ?? this.quotationInvoiceDate,
+    quotationAttention: quotationAttention ?? this.quotationAttention,
+    quotationTerms: quotationTerms ?? this.quotationTerms,
+    vehicleNumber: vehicleNumber ?? this.vehicleNumber,
   );
 }
 

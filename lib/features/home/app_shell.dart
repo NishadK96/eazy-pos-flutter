@@ -28,6 +28,7 @@ const destinations = [
   ('/inventory', 'Inventory', Icons.warehouse_outlined),
   ('/customers', 'Customers', Icons.people_outline),
   ('/sales', 'Sales', Icons.receipt_long_outlined),
+  ('/quotations', 'Quotations', Icons.request_quote_outlined),
   ('/vouchers', 'Vouchers', Icons.account_balance_wallet_outlined),
   ('/reports', 'Reports', Icons.query_stats),
   ('/restaurant', 'Restaurant', Icons.restaurant_outlined),
@@ -172,6 +173,7 @@ class _AppShellState extends ConsumerState<AppShell> {
         path == '/products' ||
         path == '/customers' ||
         path == '/sales' ||
+        path == '/quotations' ||
         path == '/sync' ||
         path == '/settings' ||
         path == '/settings/printers' ||
@@ -215,6 +217,9 @@ class _AppShellState extends ConsumerState<AppShell> {
             permittedDestinations.first,
             permittedDestinations.firstWhere((item) => item.$1 == '/products'),
             permittedDestinations.firstWhere((item) => item.$1 == '/sales'),
+            permittedDestinations.firstWhere(
+              (item) => item.$1 == '/quotations',
+            ),
             permittedDestinations.firstWhere((item) => item.$1 == '/customers'),
             if (allowVanSuppliers)
               permittedDestinations.firstWhere(

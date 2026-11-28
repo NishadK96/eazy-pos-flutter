@@ -2820,7 +2820,10 @@ class _PosScreenState extends ConsumerState<PosScreen> {
                     }
                   },
                 )
-              : null,
+              : SnackBarAction(
+                  label: context.tr('View quotations'),
+                  onPressed: () => context.go('/quotations'),
+                ),
         ),
       );
     } catch (error) {
@@ -6440,7 +6443,10 @@ class _CurrentOrder extends ConsumerWidget {
                                   }
                                 },
                               )
-                            : null,
+                            : SnackBarAction(
+                                label: context.tr('View quotations'),
+                                onPressed: () => context.go('/quotations'),
+                              ),
                       ),
                     );
                   } catch (error) {
