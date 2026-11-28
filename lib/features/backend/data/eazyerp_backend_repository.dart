@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../apis/api.dart';
 import '../../../shared/models/entities.dart';
@@ -7,6 +9,22 @@ import '../domain/backend_repository.dart';
 final backendRepositoryProvider = Provider<BackendRepository>(
   (ref) => EazyErpBackendRepository(ref.watch(apiProvider)),
 );
+
+class StartupSyncFailure extends ApiException {
+  StartupSyncFailure(this.step, this.elapsed, Object cause)
+    : occurredAt = DateTime.now().toUtc(),
+      category = cause is TimeoutException
+          ? 'Timeout'
+          : cause.runtimeType.toString(),
+      super(
+        'Startup sync failed while loading $step.',
+        statusCode: cause is ApiException ? cause.statusCode : null,
+      );
+
+  final String step, category;
+  final Duration elapsed;
+  final DateTime occurredAt;
+}
 
 class EazyErpBackendRepository implements BackendRepository {
   const EazyErpBackendRepository(this._api);
@@ -100,25 +118,31 @@ class EazyErpBackendRepository implements BackendRepository {
 
   @override
   Future<BackendSnapshot> load(String accessToken) async {
-    final productsFuture = _api.products(accessToken);
-    final customersFuture = _api.customers(accessToken);
-    final supportingDataFuture = Future.wait<Object>([
-      _api.categories(accessToken),
-      _api.locations(accessToken),
-      _api.paymentOptions(accessToken),
-      _api.businessDetails(accessToken),
-      _api.loggedInUser(accessToken),
-      _api.units(accessToken),
-      _optionalTaxes(accessToken),
-      _api.brands(accessToken),
-    ]);
-    final products = await productsFuture;
-    final customers = await customersFuture;
-    final results = await supportingDataFuture;
+    Future<T> loadStep<T>(String step, Future<T> Function() load) async {
+      final stopwatch = Stopwatch()..start();
+      try {
+        return await load();
+      } catch (error) {
+        throw StartupSyncFailure(step, stopwatch.elapsed, error);
+      }
+    }
+
+    final results = await Future.wait<Object>([
+      loadStep('categories', () => _api.categories(accessToken)),
+      loadStep('locations', () => _api.locations(accessToken)),
+      loadStep('payment options', () => _api.paymentOptions(accessToken)),
+      loadStep('business details', () => _api.businessDetails(accessToken)),
+      loadStep('user profile', () => _api.loggedInUser(accessToken)),
+      loadStep('units', () => _api.units(accessToken)),
+      loadStep('taxes', () => _optionalTaxes(accessToken)),
+      loadStep('brands', () => _api.brands(accessToken)),
+      loadStep('products', () => _api.products(accessToken)),
+      loadStep('customers', () => _api.customers(accessToken)),
+    ], eagerError: true);
     return BackendSnapshot(
-      products: products,
+      products: results[8] as List<Product>,
       categories: results[0] as List<Category>,
-      customers: customers,
+      customers: results[9] as List<Customer>,
       sales: const [],
       locations: results[1] as List<BusinessLocation>,
       paymentOptions: results[2] as List<PaymentOption>,

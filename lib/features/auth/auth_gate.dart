@@ -1,10 +1,14 @@
 import 'package:flutter/material.dart' hide Text;
+import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 import 'package:eazy_pos/shared/widgets/localized_text.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../home/app_shell.dart';
 import 'auth_controller.dart';
 import '../backend/presentation/backend_controller.dart';
+import '../backend/data/eazyerp_backend_repository.dart';
 import '../app_update/presentation/windows_update_gate.dart';
 
 class AuthGate extends ConsumerWidget {
@@ -41,6 +45,11 @@ class AuthGate extends ConsumerWidget {
                       icon: const Icon(Icons.refresh),
                       label: const Text('Retry'),
                     ),
+                    TextButton.icon(
+                      onPressed: () => _copyDiagnosticDetails(context, error),
+                      icon: const Icon(Icons.copy_outlined),
+                      label: const Text('Copy diagnostic details'),
+                    ),
                   ],
                 ),
               ),
@@ -60,5 +69,49 @@ class AuthGate extends ConsumerWidget {
       if (context.mounted) context.go('/login');
     });
     return const Scaffold(body: SizedBox.shrink());
+  }
+}
+
+Future<void> _copyDiagnosticDetails(BuildContext context, Object error) async {
+  final failure = error is StartupSyncFailure ? error : null;
+  var version = 'Unavailable';
+  try {
+    final package = await PackageInfo.fromPlatform();
+    version = '${package.version}+${package.buildNumber}';
+  } catch (_) {
+    // Keep diagnostics available even if package metadata cannot be read.
+  }
+  final details = [
+    'Eazy POS startup sync',
+    'UTC: ${(failure?.occurredAt ?? DateTime.now().toUtc()).toIso8601String()}',
+    'Platform: ${kIsWeb ? 'web' : defaultTargetPlatform.name}',
+    'Build: $version',
+    'Step: ${failure?.step ?? 'Unavailable'}',
+    'Error type: ${failure?.category ?? error.runtimeType}',
+    if (failure != null) 'Elapsed: ${failure.elapsed.inMilliseconds} ms',
+    if (failure?.statusCode case final status?) 'HTTP status: $status',
+  ].join('\n');
+  try {
+    await Clipboard.setData(ClipboardData(text: details));
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Diagnostic details copied')),
+      );
+    }
+  } catch (_) {
+    if (!context.mounted) return;
+    await showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Diagnostic details'),
+        content: SelectableText(details),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Close'),
+          ),
+        ],
+      ),
+    );
   }
 }
